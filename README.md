@@ -1,6 +1,6 @@
-# Fluxar ND
+# Fluxar Emissões
 
-Aplicação local em Python + Flask para cadastro de tomadores, criação, armazenamento e geração de documentos de cobrança em PDF.
+Aplicação em Python + Flask para cadastro de tomadores, criação, armazenamento, edição e emissão de documentos comerciais em PDF.
 
 O nome do documento e o prefixo da numeração são configuráveis. Por padrão, o sistema inicia com **NOTA DE DÉBITO** e prefixo **ND**.
 
@@ -15,11 +15,38 @@ O nome do documento e o prefixo da numeração são configuráveis. Por padrão,
 
 1. Abra **Configurações** e defina o nome do documento, prefixo, dados do emitente e logotipo.
 2. No endereço da empresa, informe o CEP para preencher logradouro, bairro, cidade e UF pelo ViaCEP.
-3. Abra **Tomadores** e cadastre os clientes que serão reutilizados nos documentos. O cadastro do tomador também possui consulta de CEP pelo ViaCEP.
+3. Abra **Tomadores** e cadastre os clientes que serão reutilizados nos documentos.
 4. Em **Novo documento**, use a busca em modal para localizar o tomador por nome, CPF ou CNPJ.
-5. Informe datas, condição, itens e valores; os campos monetários aplicam a formatação brasileira automaticamente.
-6. Gere o documento e baixe o PDF.
-7. Se necessário, use **Editar** para corrigir um documento já gravado.
+5. Informe datas, condição, itens e valores.
+6. Ao salvar, o PDF é gerado automaticamente e armazenado no servidor.
+7. Se necessário, use **Editar**; ao salvar novamente, o PDF armazenado é regenerado.
+8. Use **WhatsApp** para abrir `wa.me` com uma mensagem que contém o link público do PDF.
+
+## PDFs armazenados no servidor
+
+Os PDFs são gravados em:
+
+`instance/pdfs/`
+
+O nome físico usa um token aleatório e não o número sequencial do documento. Isso permite manter o mesmo link público mesmo quando um documento é editado e seu nome/prefixo muda.
+
+O acesso externo é feito pela rota:
+
+`/documentos/<token>/pdf`
+
+A pasta `instance/pdfs/` não precisa ser exposta diretamente pelo servidor web. O Flask entrega o arquivo pela rota pública. O token é longo e aleatório, evitando URLs sequenciais previsíveis.
+
+Ao editar um documento, o arquivo do mesmo token é substituído. Assim, links de WhatsApp enviados anteriormente continuam apontando para o documento atualizado.
+
+## WhatsApp
+
+O botão **WhatsApp** usa o telefone cadastrado no tomador e abre:
+
+`https://wa.me/<telefone>?text=<mensagem>`
+
+Para telefones brasileiros salvos com DDD e número, o sistema acrescenta o código do país `55`.
+
+O link do PDF só pode ser acessado por outra pessoa quando o Fluxar Emissões estiver publicado em um endereço público, por exemplo no PythonAnywhere. Em execução local (`127.0.0.1` ou `localhost`), o link existe, mas não é acessível fora do computador.
 
 ## Nome e prefixo do documento
 
@@ -34,26 +61,24 @@ Documentos já emitidos preservam o nome e o prefixo que possuíam. Se um docume
 
 A consulta é executada quando o CEP possui oito dígitos, ao sair do campo ou ao clicar em **Buscar**. O sistema preenche automaticamente logradouro, bairro, cidade e UF. Número e complemento permanecem para preenchimento manual.
 
-Se a consulta não estiver disponível, o endereço continua editável manualmente.
-
 ## Estrutura
 
-- `app.py`: aplicação Flask, rotas, validações e migrações simples do SQLite.
+- `app.py`: aplicação Flask, rotas, validações, armazenamento de PDFs e migrações simples do SQLite.
 - `models.py`: modelos SQLite/SQLAlchemy.
 - `services/pdf_service.py`: geração do PDF.
 - `templates/`: telas HTML/Jinja.
 - `static/js/viacep.js`: integração com o ViaCEP.
-- `static/`: CSS e JavaScript.
 - `instance/fluxar_nd.db`: banco SQLite criado automaticamente na primeira execução.
 - `instance/uploads/`: logotipo atual do emitente.
-
-## Histórico dos documentos
-
-Ao emitir um novo documento, o sistema grava uma cópia dos dados do tomador, do emitente, do logotipo, do nome do documento e do prefixo utilizados naquele momento. Assim, alterações posteriores nos cadastros não modificam automaticamente os documentos já emitidos.
+- `instance/pdfs/`: PDFs persistidos no servidor.
 
 ## Banco existente
 
-Ao iniciar esta versão sobre um banco criado por uma versão anterior, o Fluxar ND adiciona automaticamente os novos campos necessários. Não é preciso apagar o arquivo `instance/fluxar_nd.db`.
+Ao iniciar esta versão sobre um banco criado por uma versão anterior, o Fluxar Emissões adiciona automaticamente o token público dos PDFs. Não é preciso apagar o arquivo `instance/fluxar_nd.db`.
+
+## PythonAnywhere
+
+A pasta `instance/` fica dentro do diretório do projeto e permanece no servidor. Não apague nem sobrescreva `instance/fluxar_nd.db`, `instance/uploads/` ou `instance/pdfs/` durante atualizações da aplicação.
 
 ## Empacotamento
 

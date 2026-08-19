@@ -11,5 +11,5 @@ pip install -r requirements.txt
 
 echo.
 echo Ambiente configurado com sucesso.
-echo Para iniciar o Fluxar ND, execute run.bat.
+echo Para iniciar o Fluxar Emissões, execute run.bat.
 pause

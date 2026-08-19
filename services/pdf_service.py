@@ -61,7 +61,7 @@ def gerar_pdf_nota(nota, empresa, logo_bytes=None, logo_mimetype=None):
         topMargin=10 * mm,
         bottomMargin=10 * mm,
         title=f"{nota.documento_nome_exibicao} {nota.numero_formatado}",
-        author="Fluxar ND",
+        author="Fluxar Emissões",
     )
 
     estilos = criar_estilos()
@@ -168,7 +168,7 @@ def criar_cabecalho(nota, empresa, estilos, logo_bytes, logo_mimetype):
     if emitente["email"]:
         dados_empresa.append(escape(emitente["email"]))
 
-    empresa_html = "<br/>".join(dados_empresa) or "Fluxar ND"
+    empresa_html = "<br/>".join(dados_empresa) or "Fluxar Emissões"
     quadro_dados = Paragraph(empresa_html, estilos["empresa"])
 
     if logo_bytes:
@@ -403,7 +403,7 @@ def obter_emitente(nota, empresa):
         }
 
     return {
-        "razao_social": empresa.razao_social if empresa else "Fluxar ND",
+        "razao_social": empresa.razao_social if empresa else "Fluxar Emissões",
         "nome_fantasia": empresa.nome_fantasia if empresa else "",
         "cnpj": empresa.cnpj if empresa else "",
         "endereco": empresa.endereco_formatado if empresa else "",

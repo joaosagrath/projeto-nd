@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 instance/*.db
 instance/uploads/
+instance/pdfs/
 build/
 dist/
 *.spec

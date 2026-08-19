@@ -5,7 +5,9 @@ import json
 import mimetypes
 from pathlib import Path
 import re
+import secrets
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote
 from urllib.request import Request as UrlRequest, urlopen
 
 from flask import (
@@ -29,6 +31,7 @@ from services.pdf_service import gerar_pdf_nota
 BASE_DIR = Path(__file__).resolve().parent
 INSTANCE_DIR = BASE_DIR / "instance"
 UPLOAD_DIR = INSTANCE_DIR / "uploads"
+PDF_DIR = INSTANCE_DIR / "pdfs"
 EXTENSOES_LOGO = {".png", ".jpg", ".jpeg"}
 TAMANHO_MAX_LOGO = 3 * 1024 * 1024
 
@@ -41,6 +44,7 @@ def criar_app():
 
     INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    PDF_DIR.mkdir(parents=True, exist_ok=True)
 
     db.init_app(app)
 
@@ -93,7 +97,7 @@ def registrar_rotas(app):
 
         if request.method == "POST":
             try:
-                empresa.razao_social = request.form.get("razao_social", "").strip() or "Fluxar ND"
+                empresa.razao_social = request.form.get("razao_social", "").strip() or "Fluxar Emissões"
                 empresa.nome_fantasia = request.form.get("nome_fantasia", "").strip() or None
                 empresa.cnpj = normalizar_documento(request.form.get("cnpj")) or None
                 empresa.logradouro = request.form.get("logradouro", "").strip() or None
@@ -232,7 +236,7 @@ def registrar_rotas(app):
             url,
             headers={
                 "Accept": "application/json",
-                "User-Agent": "Fluxar-ND/1.0",
+                "User-Agent": "Fluxar-Emissoes/1.0",
             },
         )
 
@@ -342,20 +346,46 @@ def registrar_rotas(app):
     @app.route("/notas/<int:nota_id>/pdf")
     def baixar_pdf(nota_id):
         nota = NotaDebito.query.get_or_404(nota_id)
-        empresa = Empresa.query.first()
-        logo_bytes, logo_mimetype = obter_logo_nota(nota, empresa)
-        pdf = gerar_pdf_nota(
-            nota,
-            empresa,
-            logo_bytes=logo_bytes,
-            logo_mimetype=logo_mimetype,
-        )
-        return send_file(
-            pdf,
+        caminho = obter_ou_gerar_pdf_servidor(nota)
+        resposta = send_file(
+            caminho,
             mimetype="application/pdf",
             as_attachment=True,
             download_name=f"{sanitizar_nome_arquivo(nota.numero_formatado)}.pdf",
+            max_age=0,
         )
+        resposta.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        return resposta
+
+    @app.route("/documentos/<token>/pdf")
+    def pdf_publico(token):
+        nota = NotaDebito.query.filter_by(pdf_token=token).first_or_404()
+        caminho = obter_ou_gerar_pdf_servidor(nota)
+        resposta = send_file(
+            caminho,
+            mimetype="application/pdf",
+            as_attachment=False,
+            download_name=f"{sanitizar_nome_arquivo(nota.numero_formatado)}.pdf",
+            max_age=0,
+        )
+        resposta.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        return resposta
+
+    @app.route("/notas/<int:nota_id>/whatsapp")
+    def enviar_whatsapp(nota_id):
+        nota = NotaDebito.query.get_or_404(nota_id)
+        telefone = preparar_telefone_whatsapp(nota.tomador.telefone if nota.tomador else None)
+        if not telefone:
+            flash("O tomador não possui um telefone válido para WhatsApp.", "warning")
+            return redirect(url_for("visualizar_nota", nota_id=nota.id))
+
+        obter_ou_gerar_pdf_servidor(nota)
+        link_pdf = url_for("pdf_publico", token=nota.pdf_token, _external=True)
+        mensagem = (
+            f"Olá, {nota.tomador_nome_exibicao}. "
+            f"Segue o link do documento {nota.numero_formatado}: {link_pdf}"
+        )
+        return redirect(f"https://wa.me/{telefone}?text={quote(mensagem, safe='')}")
 
 
 def aplicar_migracoes_simples():
@@ -397,6 +427,7 @@ def aplicar_migracoes_simples():
             "emitente_logo_mimetype": "VARCHAR(100)",
             "documento_nome": "VARCHAR(120)",
             "documento_prefixo": "VARCHAR(20)",
+            "pdf_token": "VARCHAR(64)",
         },
     }
 
@@ -413,6 +444,12 @@ def aplicar_migracoes_simples():
                 continue
             db.session.execute(text(f"ALTER TABLE {tabela} ADD COLUMN {nome_coluna} {tipo_sql}"))
 
+    db.session.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_notas_debito_pdf_token "
+            "ON notas_debito (pdf_token)"
+        )
+    )
     db.session.commit()
 
 
@@ -421,7 +458,7 @@ def garantir_empresa_padrao():
     if empresa is None:
         db.session.add(
             Empresa(
-                razao_social="Fluxar ND",
+                razao_social="Fluxar Emissões",
                 documento_nome="NOTA DE DÉBITO",
                 documento_prefixo="ND",
             )
@@ -471,6 +508,10 @@ def preencher_snapshots_legados():
             nota.emitente_logo_mimetype = logo_mimetype
             alterado = True
 
+        if not nota.pdf_token:
+            nota.pdf_token = gerar_token_pdf()
+            alterado = True
+
     if alterado:
         db.session.commit()
 
@@ -507,7 +548,10 @@ def validar_documento_tomador_unico(tomador):
 
 
 def salvar_nota(form):
-    nota = NotaDebito(numero_sequencial=obter_proximo_numero())
+    nota = NotaDebito(
+        numero_sequencial=obter_proximo_numero(),
+        pdf_token=gerar_token_pdf(),
+    )
     preencher_nota_com_formulario(
         nota,
         form,
@@ -515,6 +559,8 @@ def salvar_nota(form):
         atualizar_documento=True,
     )
     db.session.add(nota)
+    db.session.flush()
+    salvar_pdf_no_servidor(nota)
     db.session.commit()
     return nota
 
@@ -526,6 +572,10 @@ def atualizar_nota(nota, form):
         atualizar_emitente=False,
         atualizar_documento=True,
     )
+    if not nota.pdf_token:
+        nota.pdf_token = gerar_token_pdf()
+    db.session.flush()
+    salvar_pdf_no_servidor(nota)
     db.session.commit()
     return nota
 
@@ -892,6 +942,51 @@ def obter_logo_nota(nota, empresa):
 def nota_tem_logo(nota, empresa):
     logo_bytes, _ = obter_logo_nota(nota, empresa)
     return bool(logo_bytes)
+
+
+def gerar_token_pdf():
+    return secrets.token_urlsafe(32)
+
+
+def caminho_pdf_servidor(nota):
+    if not nota.pdf_token:
+        nota.pdf_token = gerar_token_pdf()
+        db.session.flush()
+    return PDF_DIR / f"{nota.pdf_token}.pdf"
+
+
+def salvar_pdf_no_servidor(nota):
+    empresa = Empresa.query.first()
+    logo_bytes, logo_mimetype = obter_logo_nota(nota, empresa)
+    pdf = gerar_pdf_nota(
+        nota,
+        empresa,
+        logo_bytes=logo_bytes,
+        logo_mimetype=logo_mimetype,
+    )
+
+    caminho = caminho_pdf_servidor(nota)
+    caminho_temporario = caminho.with_suffix(".tmp")
+    caminho_temporario.write_bytes(pdf.getvalue())
+    caminho_temporario.replace(caminho)
+    return caminho
+
+
+def obter_ou_gerar_pdf_servidor(nota):
+    caminho = caminho_pdf_servidor(nota)
+    if not caminho.exists():
+        caminho = salvar_pdf_no_servidor(nota)
+        db.session.commit()
+    return caminho
+
+
+def preparar_telefone_whatsapp(valor):
+    digitos = normalizar_telefone(valor)
+    if len(digitos) in (10, 11):
+        digitos = f"55{digitos}"
+    if len(digitos) not in (12, 13):
+        return ""
+    return digitos
 
 
 def converter_data(valor, campo):

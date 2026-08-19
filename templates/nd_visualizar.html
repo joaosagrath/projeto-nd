@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ nota.numero_formatado }} - Fluxar ND{% endblock %}
+{% block title %}{{ nota.numero_formatado }} - Fluxar Emissões{% endblock %}
 
 {% block content %}
 {% set emitente_razao = nota.emitente_razao_social if nota.emitente_razao_social is not none else empresa.razao_social %}
@@ -19,6 +19,9 @@
     <a class="btn btn-outline-secondary" href="{{ url_for('index') }}">Voltar</a>
     <a class="btn btn-outline-warning" href="{{ url_for('editar_nota', nota_id=nota.id) }}">Editar</a>
     <a class="btn btn-primary" href="{{ url_for('baixar_pdf', nota_id=nota.id) }}">Baixar PDF</a>
+    {% if nota.tomador and nota.tomador.telefone %}
+      <a class="btn btn-success" href="{{ url_for('enviar_whatsapp', nota_id=nota.id) }}" target="_blank" rel="noopener">WhatsApp</a>
+    {% endif %}
   </div>
 </div>
 
@@ -32,7 +35,7 @@
           {% endif %}
         </div>
         <div class="small text-start">
-          <div class="fw-semibold">{{ emitente_razao or 'Fluxar ND' }}</div>
+          <div class="fw-semibold">{{ emitente_razao or 'Fluxar Emissões' }}</div>
           {% if emitente_fantasia and emitente_fantasia != emitente_razao %}<div>{{ emitente_fantasia }}</div>{% endif %}
           {% if emitente_endereco %}<div>{{ emitente_endereco }}</div>{% endif %}
           {% if emitente_cnpj %}<div>CNPJ: {{ emitente_cnpj|documento_br }}</div>{% endif %}

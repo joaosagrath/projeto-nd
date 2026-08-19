@@ -41,7 +41,7 @@ class Empresa(db.Model):
     __tablename__ = "empresa"
 
     id = db.Column(db.Integer, primary_key=True)
-    razao_social = db.Column(db.String(150), nullable=False, default="Fluxar ND")
+    razao_social = db.Column(db.String(150), nullable=False, default="Fluxar Emissões")
     nome_fantasia = db.Column(db.String(150), nullable=True)
     cnpj = db.Column(db.String(20), nullable=True)
     endereco = db.Column(db.String(255), nullable=True)
@@ -146,6 +146,7 @@ class NotaDebito(db.Model):
 
     documento_nome = db.Column(db.String(120), nullable=True)
     documento_prefixo = db.Column(db.String(20), nullable=True)
+    pdf_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
 
     tomador_nome = db.Column(db.String(180), nullable=True)
     tomador_documento = db.Column(db.String(30), nullable=True)

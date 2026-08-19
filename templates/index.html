@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Documentos - Fluxar ND{% endblock %}
+{% block title %}Documentos - Fluxar Emissões{% endblock %}
 
 {% block content %}
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
@@ -41,6 +41,9 @@
                 <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('visualizar_nota', nota_id=nota.id) }}">Visualizar</a>
                 <a class="btn btn-sm btn-outline-warning" href="{{ url_for('editar_nota', nota_id=nota.id) }}">Editar</a>
                 <a class="btn btn-sm btn-outline-primary" href="{{ url_for('baixar_pdf', nota_id=nota.id) }}">PDF</a>
+                {% if nota.tomador and nota.tomador.telefone %}
+                  <a class="btn btn-sm btn-outline-success" href="{{ url_for('enviar_whatsapp', nota_id=nota.id) }}" target="_blank" rel="noopener">WhatsApp</a>
+                {% endif %}
               </td>
             </tr>
           {% else %}
