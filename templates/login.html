@@ -7,7 +7,9 @@
   <div class="login-card card shadow border-0 w-100">
     <div class="card-body p-4 p-md-5">
       <div class="text-center mb-4">
-        <div class="login-mark mx-auto mb-3">F</div>
+        <div class="login-mark mx-auto mb-3">
+          <img src="static/icon-96x96.png" alt="Logotipo da empresa">
+        </div>
         <h1 class="h3 mb-1">Fluxar Emissões</h1>
         <p class="text-body-secondary mb-0">Entre para acessar o sistema.</p>
       </div>
@@ -17,27 +19,14 @@
 
         <div class="mb-3">
           <label class="form-label" for="login">Login</label>
-          <input
-            class="form-control form-control-lg"
-            id="login"
-            name="login"
-            autocomplete="username"
-            value="{{ request.form.get('login', '') }}"
-            autofocus
-            required
-          >
+          <input class="form-control form-control-lg" id="login" name="login" autocomplete="username"
+            value="{{ request.form.get('login', '') }}" autofocus required>
         </div>
 
         <div class="mb-3">
           <label class="form-label" for="senha">Senha</label>
-          <input
-            class="form-control form-control-lg"
-            type="password"
-            id="senha"
-            name="senha"
-            autocomplete="current-password"
-            required
-          >
+          <input class="form-control form-control-lg" type="password" id="senha" name="senha"
+            autocomplete="current-password" required>
         </div>
 
         <div class="text-end mb-4">

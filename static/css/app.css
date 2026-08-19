@@ -111,8 +111,8 @@ body {
 }
 
 .login-mark {
-  width: 64px;
-  height: 64px;
+  width: 96px;
+  height: 96px;
   border-radius: 18px;
   display: flex;
   align-items: center;
