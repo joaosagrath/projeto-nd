@@ -11,6 +11,9 @@ import re
 import secrets
 import smtplib
 import ssl
+import sys
+import threading
+import webbrowser
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request as UrlRequest, urlopen
@@ -34,14 +37,23 @@ from sqlalchemy import func, inspect, or_, text
 from models import Empresa, NotaDebito, NotaDebitoItem, Tomador, Usuario, db
 from services.pdf_service import gerar_pdf_nota
 from werkzeug.security import check_password_hash, generate_password_hash
+from dotenv import load_dotenv
 
 
-BASE_DIR = Path(__file__).resolve().parent
+RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys.executable).resolve().parent
+else:
+    BASE_DIR = Path(__file__).resolve().parent
+
 INSTANCE_DIR = BASE_DIR / "instance"
 UPLOAD_DIR = INSTANCE_DIR / "uploads"
 PDF_DIR = INSTANCE_DIR / "pdfs"
 EXTENSOES_LOGO = {".png", ".jpg", ".jpeg"}
 TAMANHO_MAX_LOGO = 3 * 1024 * 1024
+
+load_dotenv(BASE_DIR / ".env")
 
 
 def criar_app():
@@ -49,7 +61,12 @@ def criar_app():
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     PDF_DIR.mkdir(parents=True, exist_ok=True)
 
-    app = Flask(__name__)
+    app = Flask(
+        __name__,
+        template_folder=str(RESOURCE_DIR / "templates"),
+        static_folder=str(RESOURCE_DIR / "static"),
+    )
+    app.config["MODO_EXECUTAVEL"] = bool(getattr(sys, "frozen", False))
     app.config["SECRET_KEY"] = obter_secret_key()
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{INSTANCE_DIR / 'fluxar_nd.db'}"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -180,6 +197,14 @@ def registrar_rotas(app):
         session.clear()
         flash("Sessão encerrada.", "success")
         return redirect(url_for("login"))
+
+    @app.route("/encerrar-aplicacao", methods=["POST"])
+    def encerrar_aplicacao():
+        if not app.config.get("MODO_EXECUTAVEL"):
+            abort(404)
+
+        threading.Timer(0.8, lambda: os._exit(0)).start()
+        return render_template("encerrando.html")
 
     @app.route("/esqueci-senha", methods=["GET", "POST"])
     def esqueci_senha():
@@ -1500,5 +1525,38 @@ def formatar_brl(valor):
 app = criar_app()
 
 
+def fechar_splash_pyinstaller():
+    if not getattr(sys, "frozen", False):
+        return
+
+    try:
+        import pyi_splash
+    except ImportError:
+        return
+
+    try:
+        pyi_splash.close()
+    except Exception:
+        pass
+
+
+def executar_aplicacao_local():
+    host = "127.0.0.1"
+    port = 5000
+    modo_executavel = bool(getattr(sys, "frozen", False))
+
+    if modo_executavel:
+        fechar_splash_pyinstaller()
+        url = f"http://{host}:{port}"
+        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+
+    app.run(
+        host=host,
+        port=port,
+        debug=not modo_executavel,
+        use_reloader=False,
+    )
+
+
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    executar_aplicacao_local()

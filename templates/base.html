@@ -23,6 +23,11 @@
             <a class="nav-link" href="{{ url_for('configuracoes') }}">Configurações</a>
             <span class="navbar-text small ms-lg-3 me-lg-2">{{ session.get('usuario_login') }}</span>
             <a class="nav-link" href="{{ url_for('logout') }}">Sair</a>
+            {% if config.get('MODO_EXECUTAVEL') %}
+              <form method="post" action="{{ url_for('encerrar_aplicacao') }}" class="ms-lg-2">
+                <button type="submit" class="btn btn-sm btn-outline-light">Encerrar aplicativo</button>
+              </form>
+            {% endif %}
           </div>
         </div>
       </div>

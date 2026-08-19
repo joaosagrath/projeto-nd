@@ -61,7 +61,7 @@ Se o usuário não tiver acesso ao e-mail ou o SMTP estiver indisponível, execu
 
 ```bash
 cd ~/projeto-nd
-source .venv/bin/activate
+workon projeto-nd
 python reset_senha.py
 ```
 
@@ -133,6 +133,80 @@ Ao iniciar esta versão sobre um banco criado por uma versão anterior, o Fluxar
 
 A pasta `instance/` fica dentro do diretório do projeto e permanece no servidor. Não apague nem sobrescreva `instance/fluxar_nd.db`, `instance/uploads/`, `instance/pdfs/` ou `instance/.secret_key` durante atualizações da aplicação.
 
-## Empacotamento
+## Empacotamento para Windows (.exe)
 
-O projeto mantém as dependências de desenvolvimento em `requirements-dev.txt` para permitir o uso do PyInstaller em uma etapa posterior.
+O projeto está preparado para gerar um executável portátil com **PyInstaller**, incluindo os templates, arquivos estáticos, ícone e splash screen.
+
+Na raiz do projeto, mantenha os arquivos:
+
+- `app.ico`: ícone do executável.
+- `Splash.png`: splash exibida durante a inicialização/descompactação do executável.
+
+O script de compilação procura esses nomes automaticamente. Também é possível informar caminhos diferentes pelos parâmetros `-IconPath` e `-SplashPath`.
+
+### Gerar os executáveis
+
+Com a `.venv` já criada, execute no Windows:
+
+```bat
+build_windows.bat
+```
+
+Ou, pelo PowerShell:
+
+```powershell
+.\build_windows.ps1 -Clean
+```
+
+Se o PyInstaller ainda não estiver instalado na `.venv`, o próprio script instalará `requirements-dev.txt`.
+
+Por padrão são gerados dois arquivos em `dist/`:
+
+```text
+dist/
+├── Fluxar Emissoes.exe
+└── Fluxar Emissoes Console.exe
+```
+
+- `Fluxar Emissoes.exe`: versão principal, sem janela de console. Ao iniciar, abre o navegador automaticamente.
+- `Fluxar Emissoes Console.exe`: versão de diagnóstico, mantendo o console visível para facilitar a identificação de erros.
+
+Para gerar somente a versão principal:
+
+```powershell
+.\build_windows.ps1 -Clean -SomentePrincipal
+```
+
+### Pasta `instance` no executável
+
+A pasta `instance` **não é embutida dentro do executável**. Na primeira execução, ela é criada automaticamente ao lado do `.exe`:
+
+```text
+Fluxar Emissoes.exe
+instance/
+├── fluxar_nd.db
+├── .secret_key
+├── uploads/
+└── pdfs/
+```
+
+Isso mantém os dados persistentes fora da pasta temporária usada pelo modo `--onefile` do PyInstaller. Fechar ou atualizar o executável não apaga o banco, PDFs, uploads ou chave de sessão.
+
+Se o executável for movido para outra pasta sem a `instance`, ele iniciará como uma instalação nova. Para transportar uma instalação existente, copie o `.exe` e a pasta `instance/` juntos.
+
+O arquivo `.env`, quando utilizado na versão Windows, também deve ficar ao lado do `.exe`. Ele é carregado automaticamente e não é incorporado ao executável.
+
+### Arquivos internos empacotados
+
+Os diretórios abaixo são incluídos no executável como recursos somente de leitura:
+
+```text
+templates/
+static/
+```
+
+Durante a execução empacotada, o Flask lê esses recursos da área temporária do PyInstaller, enquanto os dados persistentes continuam sendo gravados ao lado do `.exe`.
+
+### Encerrar a versão sem console
+
+Quando o sistema está executando como `.exe`, o menu superior exibe o botão **Encerrar aplicativo**. Use esse botão para finalizar o servidor local antes de fechar a aba do navegador. Esse botão não aparece quando a aplicação está publicada no PythonAnywhere.
