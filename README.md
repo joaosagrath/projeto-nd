@@ -1,6 +1,6 @@
 # Fluxar Emissões
 
-Aplicação em Python + Flask para cadastro de tomadores, criação, armazenamento, edição e emissão de documentos comerciais em PDF.
+Aplicação em Python + Flask para cadastro de tomadores, criação, armazenamento, edição e emissão de documentos comerciais em PDF. O painel administrativo possui autenticação por login e senha.
 
 O nome do documento e o prefixo da numeração são configuráveis. Por padrão, o sistema inicia com **NOTA DE DÉBITO** e prefixo **ND**.
 
@@ -10,6 +10,7 @@ O nome do documento e o prefixo da numeração são configuráveis. Por padrão,
 2. Aguarde a criação da pasta `.venv` e a instalação das dependências.
 3. Execute `run.bat`.
 4. Acesse `http://127.0.0.1:5000` no navegador.
+5. No primeiro acesso, use `admin` como login e `admin` como senha e altere as credenciais em **Configurações > Acesso ao sistema**.
 
 ## Fluxo sugerido
 
@@ -21,6 +22,21 @@ O nome do documento e o prefixo da numeração são configuráveis. Por padrão,
 6. Ao salvar, o PDF é gerado automaticamente e armazenado no servidor.
 7. Se necessário, use **Editar**; ao salvar novamente, o PDF armazenado é regenerado.
 8. Use **WhatsApp** para abrir `wa.me` com uma mensagem que contém o link público do PDF.
+
+## Login e senha
+
+O painel administrativo é protegido por autenticação. Em uma instalação nova, o usuário inicial é:
+
+- Login: `admin`
+- Senha: `admin`
+
+Altere essas credenciais em **Configurações > Acesso ao sistema** antes de publicar a aplicação. Para trocar o login ou a senha, o sistema exige a senha atual. Novas senhas devem ter pelo menos 8 caracteres.
+
+As senhas não são armazenadas em texto puro. O banco grava somente o hash gerado pelo Werkzeug. A sessão expira após 12 horas.
+
+A rota pública `/documentos/<token>/pdf` permanece sem login, porque é ela que permite ao tomador abrir o PDF enviado por WhatsApp. As demais telas e APIs administrativas exigem autenticação.
+
+A chave usada para assinar a sessão Flask é lida da variável de ambiente `FLUXAR_SECRET_KEY`. Se essa variável não estiver definida, o sistema cria automaticamente `instance/.secret_key` e reutiliza o mesmo valor nas próximas inicializações.
 
 ## PDFs armazenados no servidor
 
@@ -71,14 +87,15 @@ A consulta é executada quando o CEP possui oito dígitos, ao sair do campo ou a
 - `instance/fluxar_nd.db`: banco SQLite criado automaticamente na primeira execução.
 - `instance/uploads/`: logotipo atual do emitente.
 - `instance/pdfs/`: PDFs persistidos no servidor.
+- `instance/.secret_key`: chave local usada para proteger as sessões quando `FLUXAR_SECRET_KEY` não estiver configurada.
 
 ## Banco existente
 
-Ao iniciar esta versão sobre um banco criado por uma versão anterior, o Fluxar Emissões adiciona automaticamente o token público dos PDFs. Não é preciso apagar o arquivo `instance/fluxar_nd.db`.
+Ao iniciar esta versão sobre um banco criado por uma versão anterior, o Fluxar Emissões mantém os dados existentes, cria a tabela de usuários automaticamente e adiciona qualquer estrutura ainda necessária. Não é preciso apagar o arquivo `instance/fluxar_nd.db`.
 
 ## PythonAnywhere
 
-A pasta `instance/` fica dentro do diretório do projeto e permanece no servidor. Não apague nem sobrescreva `instance/fluxar_nd.db`, `instance/uploads/` ou `instance/pdfs/` durante atualizações da aplicação.
+A pasta `instance/` fica dentro do diretório do projeto e permanece no servidor. Não apague nem sobrescreva `instance/fluxar_nd.db`, `instance/uploads/`, `instance/pdfs/` ou `instance/.secret_key` durante atualizações da aplicação.
 
 ## Empacotamento
 

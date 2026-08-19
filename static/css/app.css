@@ -101,3 +101,25 @@ body {
 .tomador-resultado {
   cursor: default;
 }
+
+.login-page {
+  min-height: calc(100vh - 3rem);
+}
+
+.login-card {
+  max-width: 440px;
+}
+
+.login-mark {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #6f2dbd, #9d4edd);
+  box-shadow: 0 10px 30px rgba(111, 45, 189, 0.22);
+}

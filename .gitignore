@@ -9,6 +9,8 @@ dist/
 *.spec
 .vscode/
 .idea/
+
+instance/.secret_key
 *.png
 *.ico
 instruções.txt

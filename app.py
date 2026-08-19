@@ -1,8 +1,9 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from io import BytesIO
 import json
 import mimetypes
+import os
 from pathlib import Path
 import re
 import secrets
@@ -14,18 +15,21 @@ from flask import (
     Flask,
     abort,
     flash,
+    g,
     jsonify,
     redirect,
     render_template,
     request,
     send_file,
     send_from_directory,
+    session,
     url_for,
 )
 from sqlalchemy import func, inspect, or_, text
 
-from models import Empresa, NotaDebito, NotaDebitoItem, Tomador, db
+from models import Empresa, NotaDebito, NotaDebitoItem, Tomador, Usuario, db
 from services.pdf_service import gerar_pdf_nota
+from werkzeug.security import check_password_hash, generate_password_hash
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -37,24 +41,29 @@ TAMANHO_MAX_LOGO = 3 * 1024 * 1024
 
 
 def criar_app():
-    app = Flask(__name__)
-    app.config["SECRET_KEY"] = "fluxar-nd-trocar-em-producao"
-    app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{INSTANCE_DIR / 'fluxar_nd.db'}"
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
     INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     PDF_DIR.mkdir(parents=True, exist_ok=True)
 
+    app = Flask(__name__)
+    app.config["SECRET_KEY"] = obter_secret_key()
+    app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{INSTANCE_DIR / 'fluxar_nd.db'}"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=12)
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
     db.init_app(app)
 
     registrar_filtros(app)
+    registrar_autenticacao(app)
     registrar_rotas(app)
 
     with app.app_context():
         db.create_all()
         aplicar_migracoes_simples()
         garantir_empresa_padrao()
+        garantir_usuario_padrao()
         preencher_snapshots_legados()
 
     return app
@@ -84,7 +93,90 @@ def registrar_filtros(app):
         return formatar_cep(valor)
 
 
+def obter_secret_key():
+    chave_ambiente = os.environ.get("FLUXAR_SECRET_KEY", "").strip()
+    if chave_ambiente:
+        return chave_ambiente
+
+    caminho = INSTANCE_DIR / ".secret_key"
+    if caminho.exists():
+        chave = caminho.read_text(encoding="utf-8").strip()
+        if chave:
+            return chave
+
+    chave = secrets.token_hex(32)
+    caminho.write_text(chave, encoding="utf-8")
+    try:
+        os.chmod(caminho, 0o600)
+    except OSError:
+        pass
+    return chave
+
+
+def registrar_autenticacao(app):
+    @app.before_request
+    def proteger_aplicacao():
+        endpoints_publicos = {"login", "pdf_publico", "static"}
+        if request.endpoint in endpoints_publicos:
+            return None
+
+        usuario_id = session.get("usuario_id")
+        if not usuario_id:
+            destino = request.full_path if request.query_string else request.path
+            return redirect(url_for("login", next=destino))
+
+        usuario = db.session.get(Usuario, usuario_id)
+        if usuario is None:
+            session.clear()
+            return redirect(url_for("login"))
+
+        g.usuario = usuario
+        return None
+
+
+def destino_login_seguro(valor):
+    destino = str(valor or "").strip()
+    if not destino.startswith("/") or destino.startswith("//"):
+        return None
+    return destino
+
+
 def registrar_rotas(app):
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        if session.get("usuario_id"):
+            return redirect(url_for("index"))
+
+        destino = request.args.get("next", "")
+
+        if request.method == "POST":
+            login_informado = request.form.get("login", "").strip()
+            senha = request.form.get("senha", "")
+            destino = request.form.get("next", "")
+
+            usuario = Usuario.query.filter(
+                func.lower(Usuario.login) == login_informado.lower()
+            ).first()
+
+            if usuario and check_password_hash(usuario.senha_hash, senha):
+                session.clear()
+                session["usuario_id"] = usuario.id
+                session["usuario_login"] = usuario.login
+                session.permanent = True
+
+                destino_seguro = destino_login_seguro(destino)
+                return redirect(destino_seguro or url_for("index"))
+
+            flash("Login ou senha inválidos.", "danger")
+
+        return render_template("login.html", destino=destino)
+
+    @app.route("/logout")
+    def logout():
+        session.clear()
+        flash("Sessão encerrada.", "success")
+        return redirect(url_for("login"))
+
     @app.route("/")
     def index():
         notas = NotaDebito.query.order_by(NotaDebito.numero_sequencial.desc()).all()
@@ -94,45 +186,63 @@ def registrar_rotas(app):
     @app.route("/configuracoes", methods=["GET", "POST"])
     def configuracoes():
         empresa = Empresa.query.first()
+        usuario = g.usuario
 
         if request.method == "POST":
-            try:
-                empresa.razao_social = request.form.get("razao_social", "").strip() or "Fluxar Emissões"
-                empresa.nome_fantasia = request.form.get("nome_fantasia", "").strip() or None
-                empresa.cnpj = normalizar_documento(request.form.get("cnpj")) or None
-                empresa.logradouro = request.form.get("logradouro", "").strip() or None
-                empresa.numero = request.form.get("numero", "").strip() or None
-                empresa.complemento = request.form.get("complemento", "").strip() or None
-                empresa.bairro = request.form.get("bairro", "").strip() or None
-                empresa.cidade = request.form.get("cidade", "").strip() or None
-                empresa.uf = normalizar_uf(request.form.get("uf")) or None
-                empresa.cep = normalizar_cep(request.form.get("cep")) or None
-                empresa.telefone = normalizar_telefone(request.form.get("telefone")) or None
-                empresa.email = request.form.get("email", "").strip() or None
-                empresa.documento_nome = validar_nome_documento(
-                    request.form.get("documento_nome")
-                )
-                empresa.documento_prefixo = validar_prefixo_documento(
-                    request.form.get("documento_prefixo")
-                )
+            acao = request.form.get("acao", "empresa")
 
-                empresa.endereco = empresa.endereco_formatado or None
+            if acao == "credenciais":
+                try:
+                    atualizar_credenciais_usuario(usuario, request.form)
+                    db.session.commit()
+                    session["usuario_login"] = usuario.login
+                    flash("Login e senha atualizados com sucesso.", "success")
+                    return redirect(url_for("configuracoes"))
+                except ValueError as exc:
+                    db.session.rollback()
+                    flash(str(exc), "danger")
+            else:
+                try:
+                    empresa.razao_social = request.form.get("razao_social", "").strip() or "Fluxar Emissões"
+                    empresa.nome_fantasia = request.form.get("nome_fantasia", "").strip() or None
+                    empresa.cnpj = normalizar_documento(request.form.get("cnpj")) or None
+                    empresa.logradouro = request.form.get("logradouro", "").strip() or None
+                    empresa.numero = request.form.get("numero", "").strip() or None
+                    empresa.complemento = request.form.get("complemento", "").strip() or None
+                    empresa.bairro = request.form.get("bairro", "").strip() or None
+                    empresa.cidade = request.form.get("cidade", "").strip() or None
+                    empresa.uf = normalizar_uf(request.form.get("uf")) or None
+                    empresa.cep = normalizar_cep(request.form.get("cep")) or None
+                    empresa.telefone = normalizar_telefone(request.form.get("telefone")) or None
+                    empresa.email = request.form.get("email", "").strip() or None
+                    empresa.documento_nome = validar_nome_documento(
+                        request.form.get("documento_nome")
+                    )
+                    empresa.documento_prefixo = validar_prefixo_documento(
+                        request.form.get("documento_prefixo")
+                    )
 
-                if request.form.get("remover_logo") == "1":
-                    remover_logo_empresa(empresa)
+                    empresa.endereco = empresa.endereco_formatado or None
 
-                arquivo_logo = request.files.get("logo")
-                if arquivo_logo and arquivo_logo.filename:
-                    salvar_logo_empresa(empresa, arquivo_logo)
+                    if request.form.get("remover_logo") == "1":
+                        remover_logo_empresa(empresa)
 
-                db.session.commit()
-                flash("Dados da empresa atualizados.", "success")
-                return redirect(url_for("configuracoes"))
-            except ValueError as exc:
-                db.session.rollback()
-                flash(str(exc), "danger")
+                    arquivo_logo = request.files.get("logo")
+                    if arquivo_logo and arquivo_logo.filename:
+                        salvar_logo_empresa(empresa, arquivo_logo)
 
-        return render_template("configuracoes.html", empresa=empresa)
+                    db.session.commit()
+                    flash("Dados da empresa atualizados.", "success")
+                    return redirect(url_for("configuracoes"))
+                except ValueError as exc:
+                    db.session.rollback()
+                    flash(str(exc), "danger")
+
+        return render_template(
+            "configuracoes.html",
+            empresa=empresa,
+            usuario=usuario,
+        )
 
     @app.route("/configuracoes/logo")
     def logo_empresa():
@@ -476,6 +586,52 @@ def garantir_empresa_padrao():
 
     if alterado:
         db.session.commit()
+
+
+def garantir_usuario_padrao():
+    if Usuario.query.first() is not None:
+        return
+
+    usuario = Usuario(
+        login="admin",
+        senha_hash=generate_password_hash("admin"),
+    )
+    db.session.add(usuario)
+    db.session.commit()
+
+
+def atualizar_credenciais_usuario(usuario, form):
+    login_novo = form.get("usuario_login", "").strip()
+    senha_atual = form.get("senha_atual", "")
+    nova_senha = form.get("nova_senha", "")
+    confirmar_senha = form.get("confirmar_senha", "")
+
+    if not login_novo:
+        raise ValueError("Informe o login de acesso.")
+    if len(login_novo) < 3 or len(login_novo) > 80:
+        raise ValueError("O login deve ter entre 3 e 80 caracteres.")
+    if any(caractere.isspace() for caractere in login_novo):
+        raise ValueError("O login não pode conter espaços.")
+    if not check_password_hash(usuario.senha_hash, senha_atual):
+        raise ValueError("A senha atual está incorreta.")
+
+    usuario_existente = Usuario.query.filter(
+        func.lower(Usuario.login) == login_novo.lower(),
+        Usuario.id != usuario.id,
+    ).first()
+    if usuario_existente:
+        raise ValueError("Este login já está em uso.")
+
+    if nova_senha:
+        if len(nova_senha) < 8:
+            raise ValueError("A nova senha deve ter pelo menos 8 caracteres.")
+        if nova_senha != confirmar_senha:
+            raise ValueError("A confirmação da nova senha não confere.")
+        usuario.senha_hash = generate_password_hash(nova_senha)
+    elif confirmar_senha:
+        raise ValueError("Informe a nova senha antes de confirmá-la.")
+
+    usuario.login = login_novo
 
 
 def preencher_snapshots_legados():

@@ -37,6 +37,21 @@ def _juntar_endereco(logradouro, numero, complemento, bairro, cidade, uf, cep, e
     return " - ".join(parte for parte in partes if parte)
 
 
+class Usuario(db.Model):
+    __tablename__ = "usuarios"
+
+    id = db.Column(db.Integer, primary_key=True)
+    login = db.Column(db.String(80), nullable=False, unique=True, index=True)
+    senha_hash = db.Column(db.String(255), nullable=False)
+    criado_em = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    atualizado_em = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+
 class Empresa(db.Model):
     __tablename__ = "empresa"
 

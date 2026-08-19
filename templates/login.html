@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Entrar - Fluxar Emissões{% endblock %}
+
+{% block content %}
+<div class="login-page d-flex align-items-center justify-content-center">
+  <div class="login-card card shadow border-0 w-100">
+    <div class="card-body p-4 p-md-5">
+      <div class="text-center mb-4">
+        <div class="login-mark mx-auto mb-3">F</div>
+        <h1 class="h3 mb-1">Fluxar Emissões</h1>
+        <p class="text-body-secondary mb-0">Entre para acessar o sistema.</p>
+      </div>
+
+      <form method="post" action="{{ url_for('login') }}">
+        <input type="hidden" name="next" value="{{ destino }}">
+
+        <div class="mb-3">
+          <label class="form-label" for="login">Login</label>
+          <input
+            class="form-control form-control-lg"
+            id="login"
+            name="login"
+            autocomplete="username"
+            value="{{ request.form.get('login', '') }}"
+            autofocus
+            required
+          >
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label" for="senha">Senha</label>
+          <input
+            class="form-control form-control-lg"
+            type="password"
+            id="senha"
+            name="senha"
+            autocomplete="current-password"
+            required
+          >
+        </div>
+
+        <button class="btn btn-primary btn-lg w-100" type="submit">Entrar</button>
+      </form>
+
+      <div class="text-center text-body-secondary small mt-4">
+        Primeiro acesso em uma instalação nova: <strong>admin</strong> / <strong>admin</strong>.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
