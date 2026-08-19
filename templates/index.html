@@ -1,14 +1,16 @@
 {% extends "base.html" %}
 
-{% block title %}Notas de Débito - Fluxar ND{% endblock %}
+{% block title %}Documentos - Fluxar ND{% endblock %}
 
 {% block content %}
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
   <div>
-    <h1 class="h3 mb-1">Notas de Débito</h1>
-    <p class="text-body-secondary mb-0">Consulte as NDs geradas e baixe os PDFs.</p>
+    <h1 class="h3 mb-1">Documentos</h1>
+    <p class="text-body-secondary mb-0">
+      Tipo atual: <strong>{{ empresa.documento_nome_exibicao if empresa else 'NOTA DE DÉBITO' }}</strong>. Consulte os documentos gerados e baixe os PDFs.
+    </p>
   </div>
-  <a class="btn btn-primary" href="{{ url_for('nova_nota') }}">Nova Nota de Débito</a>
+  <a class="btn btn-primary" href="{{ url_for('nova_nota') }}">Novo documento</a>
 </div>
 
 <div class="card shadow-sm border-0">
@@ -17,7 +19,8 @@
       <table class="table table-hover align-middle mb-0">
         <thead class="table-light">
           <tr>
-            <th>ND</th>
+            <th>Documento</th>
+            <th>Número</th>
             <th>Tomador</th>
             <th>Emissão</th>
             <th>Vencimento</th>
@@ -28,6 +31,7 @@
         <tbody>
           {% for nota in notas %}
             <tr>
+              <td>{{ nota.documento_nome_exibicao }}</td>
               <td class="fw-semibold">{{ nota.numero_formatado }}</td>
               <td>{{ nota.tomador_nome_exibicao }}</td>
               <td>{{ nota.emissao|data_br }}</td>
@@ -41,8 +45,8 @@
             </tr>
           {% else %}
             <tr>
-              <td colspan="6" class="text-center text-body-secondary py-5">
-                Nenhuma Nota de Débito foi criada ainda.
+              <td colspan="7" class="text-center text-body-secondary py-5">
+                Nenhum documento foi criado ainda.
               </td>
             </tr>
           {% endfor %}

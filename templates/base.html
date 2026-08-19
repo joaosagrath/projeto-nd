@@ -16,8 +16,8 @@
       </button>
       <div class="collapse navbar-collapse" id="navbarPrincipal">
         <div class="navbar-nav ms-auto">
-          <a class="nav-link" href="{{ url_for('index') }}">Notas de Débito</a>
-          <a class="nav-link" href="{{ url_for('nova_nota') }}">Nova ND</a>
+          <a class="nav-link" href="{{ url_for('index') }}">Documentos</a>
+          <a class="nav-link" href="{{ url_for('nova_nota') }}">Novo documento</a>
           <a class="nav-link" href="{{ url_for('listar_tomadores') }}">Tomadores</a>
           <a class="nav-link" href="{{ url_for('configuracoes') }}">Configurações</a>
         </div>
@@ -42,6 +42,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="{{ url_for('static', filename='js/masks.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/viacep.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

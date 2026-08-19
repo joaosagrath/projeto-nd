@@ -55,6 +55,8 @@ class Empresa(db.Model):
     telefone = db.Column(db.String(30), nullable=True)
     email = db.Column(db.String(150), nullable=True)
     logo_arquivo = db.Column(db.String(255), nullable=True)
+    documento_nome = db.Column(db.String(120), nullable=False, default="NOTA DE DÉBITO")
+    documento_prefixo = db.Column(db.String(20), nullable=False, default="ND")
     criado_em = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     atualizado_em = db.Column(
         db.DateTime,
@@ -75,6 +77,16 @@ class Empresa(db.Model):
             self.cep,
             self.endereco,
         )
+
+    @property
+    def documento_nome_exibicao(self):
+        return (self.documento_nome or "NOTA DE DÉBITO").strip()
+
+    @property
+    def documento_prefixo_exibicao(self):
+        if self.documento_prefixo is None:
+            return "ND"
+        return self.documento_prefixo.strip()
 
 
 class Tomador(db.Model):
@@ -132,6 +144,9 @@ class NotaDebito(db.Model):
     valor_pagar = db.Column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
     tomador_id = db.Column(db.Integer, db.ForeignKey("tomadores.id"), nullable=False)
 
+    documento_nome = db.Column(db.String(120), nullable=True)
+    documento_prefixo = db.Column(db.String(20), nullable=True)
+
     tomador_nome = db.Column(db.String(180), nullable=True)
     tomador_documento = db.Column(db.String(30), nullable=True)
     tomador_endereco = db.Column(db.String(350), nullable=True)
@@ -162,8 +177,18 @@ class NotaDebito(db.Model):
     )
 
     @property
+    def documento_nome_exibicao(self):
+        return (self.documento_nome or "NOTA DE DÉBITO").strip()
+
+    @property
+    def documento_prefixo_exibicao(self):
+        if self.documento_prefixo is None:
+            return "ND"
+        return self.documento_prefixo.strip()
+
+    @property
     def numero_formatado(self):
-        return f"ND{self.numero_sequencial:05d}"
+        return f"{self.documento_prefixo_exibicao}{self.numero_sequencial:05d}"
 
     @property
     def tomador_nome_exibicao(self):

@@ -1,9 +1,12 @@
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from io import BytesIO
+import json
 import mimetypes
 from pathlib import Path
 import re
+from urllib.error import HTTPError, URLError
+from urllib.request import Request as UrlRequest, urlopen
 
 from flask import (
     Flask,
@@ -81,7 +84,8 @@ def registrar_rotas(app):
     @app.route("/")
     def index():
         notas = NotaDebito.query.order_by(NotaDebito.numero_sequencial.desc()).all()
-        return render_template("index.html", notas=notas)
+        empresa = Empresa.query.first()
+        return render_template("index.html", notas=notas, empresa=empresa)
 
     @app.route("/configuracoes", methods=["GET", "POST"])
     def configuracoes():
@@ -101,6 +105,12 @@ def registrar_rotas(app):
                 empresa.cep = normalizar_cep(request.form.get("cep")) or None
                 empresa.telefone = normalizar_telefone(request.form.get("telefone")) or None
                 empresa.email = request.form.get("email", "").strip() or None
+                empresa.documento_nome = validar_nome_documento(
+                    request.form.get("documento_nome")
+                )
+                empresa.documento_prefixo = validar_prefixo_documento(
+                    request.form.get("documento_prefixo")
+                )
 
                 empresa.endereco = empresa.endereco_formatado or None
 
@@ -203,13 +213,53 @@ def registrar_rotas(app):
         tomador = Tomador.query.get_or_404(tomador_id)
 
         if tomador.notas:
-            flash("Este tomador possui Notas de Débito e não pode ser excluído.", "warning")
+            flash("Este tomador possui documentos e não pode ser excluído.", "warning")
             return redirect(url_for("listar_tomadores"))
 
         db.session.delete(tomador)
         db.session.commit()
         flash("Tomador excluído.", "success")
         return redirect(url_for("listar_tomadores"))
+
+    @app.route("/api/cep/<cep>")
+    def api_buscar_cep(cep):
+        digitos = re.sub(r"\D", "", str(cep or ""))
+        if len(digitos) != 8:
+            return jsonify({"erro": True, "mensagem": "Informe um CEP válido com 8 dígitos."}), 400
+
+        url = f"https://viacep.com.br/ws/{digitos}/json/"
+        requisicao = UrlRequest(
+            url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "Fluxar-ND/1.0",
+            },
+        )
+
+        try:
+            with urlopen(requisicao, timeout=6) as resposta:
+                dados = json.loads(resposta.read().decode("utf-8"))
+        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+            return jsonify(
+                {
+                    "erro": True,
+                    "mensagem": "Não foi possível consultar o ViaCEP. Preencha o endereço manualmente.",
+                }
+            ), 503
+
+        if dados.get("erro"):
+            return jsonify({"erro": True, "mensagem": "CEP não encontrado."}), 404
+
+        return jsonify(
+            {
+                "erro": False,
+                "cep": dados.get("cep", ""),
+                "logradouro": dados.get("logradouro", ""),
+                "bairro": dados.get("bairro", ""),
+                "localidade": dados.get("localidade", ""),
+                "uf": dados.get("uf", ""),
+            }
+        )
 
     @app.route("/api/tomadores")
     def api_buscar_tomadores():
@@ -238,7 +288,7 @@ def registrar_rotas(app):
                 flash(str(exc), "danger")
             except Exception:
                 db.session.rollback()
-                flash("Não foi possível salvar a Nota de Débito.", "danger")
+                flash("Não foi possível salvar o documento.", "danger")
 
         contexto = montar_contexto_form_nota()
         return render_template("nd_form.html", **contexto)
@@ -257,7 +307,7 @@ def registrar_rotas(app):
                 flash(str(exc), "danger")
             except Exception:
                 db.session.rollback()
-                flash("Não foi possível atualizar a Nota de Débito.", "danger")
+                flash("Não foi possível atualizar o documento.", "danger")
 
         contexto = montar_contexto_form_nota(nota)
         return render_template("nd_form.html", **contexto)
@@ -304,7 +354,7 @@ def registrar_rotas(app):
             pdf,
             mimetype="application/pdf",
             as_attachment=True,
-            download_name=f"{nota.numero_formatado}.pdf",
+            download_name=f"{sanitizar_nome_arquivo(nota.numero_formatado)}.pdf",
         )
 
 
@@ -319,6 +369,8 @@ def aplicar_migracoes_simples():
             "uf": "VARCHAR(2)",
             "cep": "VARCHAR(12)",
             "logo_arquivo": "VARCHAR(255)",
+            "documento_nome": "VARCHAR(120)",
+            "documento_prefixo": "VARCHAR(20)",
         },
         "tomadores": {
             "logradouro": "VARCHAR(150)",
@@ -343,6 +395,8 @@ def aplicar_migracoes_simples():
             "emitente_email": "VARCHAR(150)",
             "emitente_logo": "BLOB",
             "emitente_logo_mimetype": "VARCHAR(100)",
+            "documento_nome": "VARCHAR(120)",
+            "documento_prefixo": "VARCHAR(20)",
         },
     }
 
@@ -363,8 +417,27 @@ def aplicar_migracoes_simples():
 
 
 def garantir_empresa_padrao():
-    if Empresa.query.first() is None:
-        db.session.add(Empresa(razao_social="Fluxar ND"))
+    empresa = Empresa.query.first()
+    if empresa is None:
+        db.session.add(
+            Empresa(
+                razao_social="Fluxar ND",
+                documento_nome="NOTA DE DÉBITO",
+                documento_prefixo="ND",
+            )
+        )
+        db.session.commit()
+        return
+
+    alterado = False
+    if not empresa.documento_nome:
+        empresa.documento_nome = "NOTA DE DÉBITO"
+        alterado = True
+    if empresa.documento_prefixo is None:
+        empresa.documento_prefixo = "ND"
+        alterado = True
+
+    if alterado:
         db.session.commit()
 
 
@@ -374,6 +447,13 @@ def preencher_snapshots_legados():
     alterado = False
 
     for nota in NotaDebito.query.all():
+        if nota.documento_nome is None:
+            nota.documento_nome = empresa.documento_nome_exibicao if empresa else "NOTA DE DÉBITO"
+            alterado = True
+        if nota.documento_prefixo is None:
+            nota.documento_prefixo = empresa.documento_prefixo_exibicao if empresa else "ND"
+            alterado = True
+
         if nota.tomador_nome is None and nota.tomador:
             nota.tomador_nome = nota.tomador.nome
             nota.tomador_documento = nota.tomador.documento
@@ -428,19 +508,34 @@ def validar_documento_tomador_unico(tomador):
 
 def salvar_nota(form):
     nota = NotaDebito(numero_sequencial=obter_proximo_numero())
-    preencher_nota_com_formulario(nota, form, atualizar_emitente=True)
+    preencher_nota_com_formulario(
+        nota,
+        form,
+        atualizar_emitente=True,
+        atualizar_documento=True,
+    )
     db.session.add(nota)
     db.session.commit()
     return nota
 
 
 def atualizar_nota(nota, form):
-    preencher_nota_com_formulario(nota, form, atualizar_emitente=False)
+    preencher_nota_com_formulario(
+        nota,
+        form,
+        atualizar_emitente=False,
+        atualizar_documento=True,
+    )
     db.session.commit()
     return nota
 
 
-def preencher_nota_com_formulario(nota, form, atualizar_emitente=False):
+def preencher_nota_com_formulario(
+    nota,
+    form,
+    atualizar_emitente=False,
+    atualizar_documento=False,
+):
     tomador_id = form.get("tomador_id", "").strip()
     if not tomador_id.isdigit():
         raise ValueError("Selecione um tomador cadastrado.")
@@ -480,7 +575,7 @@ def preencher_nota_com_formulario(nota, form, atualizar_emitente=False):
         itens_validos.append((descricao, quantidade, valor_unitario, total_item))
 
     if not itens_validos:
-        raise ValueError("Adicione pelo menos um item à Nota de Débito.")
+        raise ValueError("Adicione pelo menos um item ao documento.")
 
     outras_retencoes = converter_decimal(
         form.get("outras_retencoes", "0"),
@@ -516,12 +611,16 @@ def preencher_nota_com_formulario(nota, form, atualizar_emitente=False):
     nota.tomador_documento = tomador.documento
     nota.tomador_endereco = tomador.endereco_formatado or None
 
-    if atualizar_emitente or nota.emitente_razao_social is None:
+    empresa = Empresa.query.first()
+    if empresa is None:
+        garantir_empresa_padrao()
         empresa = Empresa.query.first()
-        if empresa is None:
-            garantir_empresa_padrao()
-            empresa = Empresa.query.first()
 
+    if atualizar_documento or nota.documento_nome is None:
+        nota.documento_nome = empresa.documento_nome_exibicao
+        nota.documento_prefixo = empresa.documento_prefixo_exibicao
+
+    if atualizar_emitente or nota.emitente_razao_social is None:
         logo_bytes, logo_mimetype = obter_logo_atual(empresa)
         nota.emitente_razao_social = empresa.razao_social
         nota.emitente_nome_fantasia = empresa.nome_fantasia
@@ -549,6 +648,13 @@ def preencher_nota_com_formulario(nota, form, atualizar_emitente=False):
 def montar_contexto_form_nota(nota=None):
     hoje = date.today()
     modo_edicao = nota is not None
+    empresa = Empresa.query.first()
+    if empresa is None:
+        garantir_empresa_padrao()
+        empresa = Empresa.query.first()
+
+    documento_nome_atual = empresa.documento_nome_exibicao
+    documento_prefixo_atual = empresa.documento_prefixo_exibicao
 
     if request.method == "POST":
         form_data = {
@@ -610,11 +716,20 @@ def montar_contexto_form_nota(nota=None):
         )
         texto_submit = "Salvar alterações"
     else:
-        titulo_pagina = "Nova Nota de Débito"
-        numero_exibicao = f"ND{obter_proximo_numero():05d}"
+        titulo_pagina = "Novo documento"
+        numero_exibicao = formatar_numero_documento(
+            obter_proximo_numero(),
+            documento_prefixo_atual,
+        )
         form_action = url_for("nova_nota")
         url_cadastrar_tomador = url_for("novo_tomador", next="nova_nota")
-        texto_submit = "Gerar Nota de Débito"
+        texto_submit = "Gerar documento"
+
+    numero_apos_salvar = (
+        formatar_numero_documento(nota.numero_sequencial, documento_prefixo_atual)
+        if modo_edicao
+        else numero_exibicao
+    )
 
     return {
         "nota": nota,
@@ -628,6 +743,9 @@ def montar_contexto_form_nota(nota=None):
         "tomador_selecionado_json": montar_tomador_json(tomador_selecionado),
         "url_cadastrar_tomador": url_cadastrar_tomador,
         "texto_submit": texto_submit,
+        "documento_nome_atual": documento_nome_atual,
+        "documento_prefixo_atual": documento_prefixo_atual,
+        "numero_apos_salvar": numero_apos_salvar,
     }
 
 
@@ -692,6 +810,33 @@ def formatar_decimal_form(valor):
     valor_decimal = Decimal(valor or 0)
     texto = f"{valor_decimal:,.2f}"
     return texto.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def validar_nome_documento(valor):
+    nome = str(valor or "").strip()
+    if not nome:
+        raise ValueError("Informe o nome do documento.")
+    if len(nome) > 120:
+        raise ValueError("O nome do documento deve ter no máximo 120 caracteres.")
+    return nome
+
+
+def validar_prefixo_documento(valor):
+    prefixo = str(valor or "").strip()
+    if len(prefixo) > 20:
+        raise ValueError("O prefixo do documento deve ter no máximo 20 caracteres.")
+    return prefixo
+
+
+def formatar_numero_documento(numero_sequencial, prefixo):
+    prefixo_texto = "" if prefixo is None else str(prefixo).strip()
+    return f"{prefixo_texto}{int(numero_sequencial):05d}"
+
+
+def sanitizar_nome_arquivo(valor):
+    nome = re.sub(r'[<>:"/\\|?*]+', "_", str(valor or "documento").strip())
+    nome = nome.rstrip(". ")
+    return nome or "documento"
 
 
 def salvar_logo_empresa(empresa, arquivo):

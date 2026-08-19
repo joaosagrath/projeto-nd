@@ -6,7 +6,7 @@
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
   <div>
     <h1 class="h3 mb-1">Tomadores</h1>
-    <p class="text-body-secondary mb-0">Cadastre clientes uma única vez e reutilize-os nas próximas NDs.</p>
+    <p class="text-body-secondary mb-0">Cadastre clientes uma única vez e reutilize-os nos próximos documentos.</p>
   </div>
   <a class="btn btn-primary" href="{{ url_for('novo_tomador') }}">Novo tomador</a>
 </div>
@@ -21,7 +21,7 @@
             <th>CPF / CNPJ</th>
             <th>Localidade</th>
             <th>Telefone</th>
-            <th class="text-center">NDs</th>
+            <th class="text-center">Documentos</th>
             <th class="text-end">Ações</th>
           </tr>
         </thead>
@@ -42,7 +42,7 @@
               <td class="text-end text-nowrap">
                 <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('editar_tomador', tomador_id=tomador.id) }}">Editar</a>
                 <form class="d-inline" method="post" action="{{ url_for('excluir_tomador', tomador_id=tomador.id) }}" onsubmit="return confirm('Excluir este tomador?');">
-                  <button class="btn btn-sm btn-outline-danger" type="submit" {% if tomador.notas %}disabled title="Tomador com NDs não pode ser excluído"{% endif %}>Excluir</button>
+                  <button class="btn btn-sm btn-outline-danger" type="submit" {% if tomador.notas %}disabled title="Tomador com documentos não pode ser excluído"{% endif %}>Excluir</button>
                 </form>
               </td>
             </tr>

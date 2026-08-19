@@ -8,25 +8,31 @@
     <h1 class="h3 mb-1">{{ titulo_pagina }}</h1>
     <p class="text-body-secondary mb-0">
       {% if modo_edicao %}
-        Número da nota: <strong>{{ numero_exibicao }}</strong>
+        {{ nota.documento_nome_exibicao }} · Número atual: <strong>{{ numero_exibicao }}</strong>
       {% else %}
-        Número reservado: <strong>{{ numero_exibicao }}</strong>
+        {{ documento_nome_atual }} · Número reservado: <strong>{{ numero_exibicao }}</strong>
       {% endif %}
     </p>
   </div>
   <a class="btn btn-outline-secondary" href="{{ url_for('visualizar_nota', nota_id=nota.id) if modo_edicao else url_for('index') }}">Voltar</a>
 </div>
 
+{% if modo_edicao and (nota.documento_nome_exibicao != documento_nome_atual or nota.documento_prefixo_exibicao != documento_prefixo_atual) %}
+  <div class="alert alert-info">
+    Ao salvar, este documento passará a usar o tipo atual <strong>{{ documento_nome_atual }}</strong> e a numeração <strong>{{ numero_apos_salvar }}</strong>.
+  </div>
+{% endif %}
+
 {% if not tem_tomadores %}
   <div class="alert alert-warning d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
-    <div>Cadastre pelo menos um tomador antes de gerar uma Nota de Débito.</div>
+    <div>Cadastre pelo menos um tomador antes de gerar o documento.</div>
     <a class="btn btn-sm btn-warning" href="{{ url_cadastrar_tomador }}">Cadastrar tomador</a>
   </div>
 {% endif %}
 
 <form method="post" id="formNotaDebito" action="{{ form_action }}">
   <div class="card shadow-sm border-0 mb-4">
-    <div class="card-header fw-semibold">Dados da Nota</div>
+    <div class="card-header fw-semibold">Dados do documento</div>
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-3">

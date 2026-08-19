@@ -60,7 +60,7 @@ def gerar_pdf_nota(nota, empresa, logo_bytes=None, logo_mimetype=None):
         leftMargin=10 * mm,
         topMargin=10 * mm,
         bottomMargin=10 * mm,
-        title=nota.numero_formatado,
+        title=f"{nota.documento_nome_exibicao} {nota.numero_formatado}",
         author="Fluxar ND",
     )
 
@@ -199,7 +199,7 @@ def criar_cabecalho(nota, empresa, estilos, logo_bytes, logo_mimetype):
     condicao = escape(str(nota.condicao or "-"))
 
     quadro_direito = [
-        Paragraph("NOTA DE DÉBITO", estilos["titulo"]),
+        Paragraph(escape(nota.documento_nome_exibicao), estilos["titulo"]),
         Paragraph(escape(nota.numero_formatado), estilos["subtitulo"]),
         Spacer(1, 3 * mm),
         Paragraph(f"<b>Emissão:</b> {nota.emissao.strftime('%d/%m/%Y')}", estilos["centro"]),
