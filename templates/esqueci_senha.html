@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Recuperar senha - Fluxar Emissões{% endblock %}
+
+{% block content %}
+<div class="login-page d-flex align-items-center justify-content-center">
+  <div class="login-card card shadow border-0 w-100">
+    <div class="card-body p-4 p-md-5">
+      <div class="text-center mb-4">
+        <div class="login-mark mx-auto mb-3">F</div>
+        <h1 class="h3 mb-1">Recuperar senha</h1>
+        <p class="text-body-secondary mb-0">Informe seu login ou e-mail de recuperação.</p>
+      </div>
+
+      {% if not servico_email_ativo %}
+        <div class="alert alert-warning small">
+          O envio por e-mail ainda não está configurado neste servidor. O administrador pode redefinir o acesso usando <strong>reset_senha.py</strong>.
+        </div>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('esqueci_senha') }}">
+        <div class="mb-4">
+          <label class="form-label" for="identificador">Login ou e-mail</label>
+          <input
+            class="form-control form-control-lg"
+            id="identificador"
+            name="identificador"
+            autocomplete="username"
+            value="{{ request.form.get('identificador', '') }}"
+            autofocus
+            required
+          >
+          <div class="form-text">Se houver um e-mail de recuperação cadastrado, enviaremos um link válido por 30 minutos.</div>
+        </div>
+
+        <button class="btn btn-primary btn-lg w-100" type="submit" {% if not servico_email_ativo %}disabled{% endif %}>Enviar link de recuperação</button>
+      </form>
+
+      <div class="text-center mt-4">
+        <a class="text-decoration-none" href="{{ url_for('login') }}">Voltar para o login</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

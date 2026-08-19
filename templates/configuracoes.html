@@ -149,14 +149,14 @@
 
 <div class="mb-3">
   <h2 class="h4 mb-1">Acesso ao sistema</h2>
-  <p class="text-body-secondary mb-0">Altere o login e a senha usados para entrar no Fluxar Emissões.</p>
+  <p class="text-body-secondary mb-0">Altere o login, o e-mail de recuperação e a senha usados no Fluxar Emissões.</p>
 </div>
 
 <form method="post">
   <input type="hidden" name="acao" value="credenciais">
 
   <div class="card shadow-sm border-0 mb-4">
-    <div class="card-header fw-semibold">Login e senha</div>
+    <div class="card-header fw-semibold">Acesso e recuperação</div>
     <div class="card-body">
       <div class="row g-3">
         <div class="col-md-6">
@@ -172,6 +172,20 @@
           >
         </div>
         <div class="col-md-6">
+          <label class="form-label" for="email_recuperacao">E-mail de recuperação</label>
+          <input
+            class="form-control"
+            type="email"
+            id="email_recuperacao"
+            name="email_recuperacao"
+            maxlength="150"
+            autocomplete="email"
+            value="{{ request.form.get('email_recuperacao', usuario.email_recuperacao or '') if request.form.get('acao') == 'credenciais' else (usuario.email_recuperacao or '') }}"
+            placeholder="voce@exemplo.com"
+          >
+          <div class="form-text">Usado somente para recuperar a senha pela tela de login.</div>
+        </div>
+        <div class="col-md-12">
           <label class="form-label" for="senha_atual">Senha atual</label>
           <input
             class="form-control"
@@ -181,7 +195,7 @@
             autocomplete="current-password"
             required
           >
-          <div class="form-text">Necessária para confirmar qualquer alteração de acesso.</div>
+          <div class="form-text">Necessária para confirmar qualquer alteração de login, e-mail ou senha.</div>
         </div>
         <div class="col-md-6">
           <label class="form-label" for="nova_senha">Nova senha</label>
@@ -207,11 +221,19 @@
           >
         </div>
       </div>
+
+      <div class="alert {{ 'alert-success' if servico_email_ativo else 'alert-warning' }} mt-4 mb-0 small">
+        {% if servico_email_ativo %}
+          O servidor de e-mail está configurado. O link <strong>Esqueci minha senha</strong> poderá enviar a recuperação para o endereço cadastrado acima.
+        {% else %}
+          O servidor de e-mail ainda não está configurado. O e-mail pode ser cadastrado agora, mas o envio só funcionará depois que as variáveis SMTP forem configuradas no servidor. O arquivo <strong>reset_senha.py</strong> continua disponível como recuperação de emergência.
+        {% endif %}
+      </div>
     </div>
   </div>
 
   <div class="d-flex justify-content-end">
-    <button class="btn btn-outline-primary" type="submit">Atualizar login e senha</button>
+    <button class="btn btn-outline-primary" type="submit">Atualizar acesso</button>
   </div>
 </form>
 {% endblock %}

@@ -1,5 +1,7 @@
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from email.message import EmailMessage
+import hashlib
 from io import BytesIO
 import json
 import mimetypes
@@ -7,6 +9,8 @@ import os
 from pathlib import Path
 import re
 import secrets
+import smtplib
+import ssl
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request as UrlRequest, urlopen
@@ -116,7 +120,7 @@ def obter_secret_key():
 def registrar_autenticacao(app):
     @app.before_request
     def proteger_aplicacao():
-        endpoints_publicos = {"login", "pdf_publico", "static"}
+        endpoints_publicos = {"login", "esqueci_senha", "redefinir_senha", "pdf_publico", "static"}
         if request.endpoint in endpoints_publicos:
             return None
 
@@ -177,6 +181,92 @@ def registrar_rotas(app):
         flash("Sessão encerrada.", "success")
         return redirect(url_for("login"))
 
+    @app.route("/esqueci-senha", methods=["GET", "POST"])
+    def esqueci_senha():
+        if session.get("usuario_id"):
+            return redirect(url_for("index"))
+
+        if request.method == "POST":
+            identificador = request.form.get("identificador", "").strip()
+            if not identificador:
+                flash("Informe seu login ou e-mail de recuperação.", "danger")
+                return render_template(
+                    "esqueci_senha.html",
+                    servico_email_ativo=servico_email_configurado(),
+                )
+
+            if not servico_email_configurado():
+                flash(
+                    "A recuperação por e-mail ainda não está configurada neste servidor. "
+                    "Use o reset administrativo pelo arquivo reset_senha.py.",
+                    "warning",
+                )
+                return render_template(
+                    "esqueci_senha.html",
+                    servico_email_ativo=False,
+                )
+
+            usuario = localizar_usuario_recuperacao(identificador)
+            if usuario and usuario.email_recuperacao:
+                token = gerar_token_recuperacao(usuario)
+                db.session.commit()
+                link = url_for("redefinir_senha", token=token, _external=True)
+
+                try:
+                    enviar_email_recuperacao(usuario, link)
+                except (OSError, smtplib.SMTPException) as exc:
+                    usuario.reset_token_hash = None
+                    usuario.reset_token_expira_em = None
+                    db.session.commit()
+                    app.logger.exception("Falha ao enviar e-mail de recuperação: %s", exc)
+                    flash(
+                        "Não foi possível enviar o e-mail de recuperação agora. "
+                        "Tente novamente mais tarde ou use o reset administrativo.",
+                        "danger",
+                    )
+                    return render_template(
+                        "esqueci_senha.html",
+                        servico_email_ativo=True,
+                    )
+
+            flash(
+                "Se a conta informada possuir um e-mail de recuperação cadastrado, "
+                "você receberá um link para redefinir a senha.",
+                "success",
+            )
+            return redirect(url_for("login"))
+
+        return render_template(
+            "esqueci_senha.html",
+            servico_email_ativo=servico_email_configurado(),
+        )
+
+    @app.route("/redefinir-senha/<token>", methods=["GET", "POST"])
+    def redefinir_senha(token):
+        usuario = localizar_usuario_por_token(token)
+        if usuario is None:
+            flash("Este link de recuperação é inválido ou expirou.", "danger")
+            return redirect(url_for("esqueci_senha"))
+
+        if request.method == "POST":
+            nova_senha = request.form.get("nova_senha", "")
+            confirmar_senha = request.form.get("confirmar_senha", "")
+
+            if len(nova_senha) < 8:
+                flash("A nova senha deve ter pelo menos 8 caracteres.", "danger")
+            elif nova_senha != confirmar_senha:
+                flash("A confirmação da nova senha não confere.", "danger")
+            else:
+                usuario.senha_hash = generate_password_hash(nova_senha)
+                usuario.reset_token_hash = None
+                usuario.reset_token_expira_em = None
+                db.session.commit()
+                session.clear()
+                flash("Senha redefinida com sucesso. Entre usando a nova senha.", "success")
+                return redirect(url_for("login"))
+
+        return render_template("redefinir_senha.html", token=token)
+
     @app.route("/")
     def index():
         notas = NotaDebito.query.order_by(NotaDebito.numero_sequencial.desc()).all()
@@ -196,7 +286,7 @@ def registrar_rotas(app):
                     atualizar_credenciais_usuario(usuario, request.form)
                     db.session.commit()
                     session["usuario_login"] = usuario.login
-                    flash("Login e senha atualizados com sucesso.", "success")
+                    flash("Dados de acesso atualizados com sucesso.", "success")
                     return redirect(url_for("configuracoes"))
                 except ValueError as exc:
                     db.session.rollback()
@@ -242,6 +332,7 @@ def registrar_rotas(app):
             "configuracoes.html",
             empresa=empresa,
             usuario=usuario,
+            servico_email_ativo=servico_email_configurado(),
         )
 
     @app.route("/configuracoes/logo")
@@ -523,6 +614,11 @@ def aplicar_migracoes_simples():
             "telefone": "VARCHAR(30)",
             "email": "VARCHAR(150)",
         },
+        "usuarios": {
+            "email_recuperacao": "VARCHAR(150)",
+            "reset_token_hash": "VARCHAR(64)",
+            "reset_token_expira_em": "DATETIME",
+        },
         "notas_debito": {
             "tomador_nome": "VARCHAR(180)",
             "tomador_documento": "VARCHAR(30)",
@@ -558,6 +654,12 @@ def aplicar_migracoes_simples():
         text(
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_notas_debito_pdf_token "
             "ON notas_debito (pdf_token)"
+        )
+    )
+    db.session.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_usuarios_reset_token_hash "
+            "ON usuarios (reset_token_hash)"
         )
     )
     db.session.commit()
@@ -602,6 +704,7 @@ def garantir_usuario_padrao():
 
 def atualizar_credenciais_usuario(usuario, form):
     login_novo = form.get("usuario_login", "").strip()
+    email_recuperacao = validar_email_recuperacao(form.get("email_recuperacao"))
     senha_atual = form.get("senha_atual", "")
     nova_senha = form.get("nova_senha", "")
     confirmar_senha = form.get("confirmar_senha", "")
@@ -632,6 +735,138 @@ def atualizar_credenciais_usuario(usuario, form):
         raise ValueError("Informe a nova senha antes de confirmá-la.")
 
     usuario.login = login_novo
+    usuario.email_recuperacao = email_recuperacao
+    if nova_senha:
+        usuario.reset_token_hash = None
+        usuario.reset_token_expira_em = None
+
+
+def validar_email_recuperacao(valor):
+    email = str(valor or "").strip().lower()
+    if not email:
+        return None
+    if len(email) > 150:
+        raise ValueError("O e-mail de recuperação é muito longo.")
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        raise ValueError("Informe um e-mail de recuperação válido.")
+    return email
+
+
+def localizar_usuario_recuperacao(identificador):
+    valor = str(identificador or "").strip().lower()
+    if not valor:
+        return None
+
+    return Usuario.query.filter(
+        or_(
+            func.lower(Usuario.login) == valor,
+            func.lower(Usuario.email_recuperacao) == valor,
+        )
+    ).first()
+
+
+def gerar_token_recuperacao(usuario):
+    token = secrets.token_urlsafe(32)
+    usuario.reset_token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    usuario.reset_token_expira_em = datetime.utcnow() + timedelta(minutes=30)
+    return token
+
+
+def localizar_usuario_por_token(token):
+    token = str(token or "").strip()
+    if not token:
+        return None
+
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    usuario = Usuario.query.filter_by(reset_token_hash=token_hash).first()
+    if usuario is None or usuario.reset_token_expira_em is None:
+        return None
+
+    if usuario.reset_token_expira_em < datetime.utcnow():
+        usuario.reset_token_hash = None
+        usuario.reset_token_expira_em = None
+        db.session.commit()
+        return None
+
+    return usuario
+
+
+def ler_variavel_booleana(nome, padrao=False):
+    valor = os.environ.get(nome)
+    if valor is None:
+        return padrao
+    return valor.strip().lower() in {"1", "true", "yes", "sim", "on"}
+
+
+def obter_configuracao_smtp():
+    host = os.environ.get("FLUXAR_SMTP_HOST", "").strip()
+    usuario = os.environ.get("FLUXAR_SMTP_USUARIO", "").strip()
+    senha = os.environ.get("FLUXAR_SMTP_SENHA", "")
+    remetente = os.environ.get("FLUXAR_SMTP_REMETENTE", "").strip() or usuario
+    remetente_nome = os.environ.get("FLUXAR_SMTP_NOME", "Fluxar Emissões").strip() or "Fluxar Emissões"
+    usar_ssl = ler_variavel_booleana("FLUXAR_SMTP_SSL", False)
+    usar_tls = ler_variavel_booleana("FLUXAR_SMTP_TLS", not usar_ssl)
+
+    porta_padrao = 465 if usar_ssl else 587
+    try:
+        porta = int(os.environ.get("FLUXAR_SMTP_PORT", porta_padrao))
+    except (TypeError, ValueError):
+        porta = porta_padrao
+
+    return {
+        "host": host,
+        "porta": porta,
+        "usuario": usuario,
+        "senha": senha,
+        "remetente": remetente,
+        "remetente_nome": remetente_nome,
+        "usar_ssl": usar_ssl,
+        "usar_tls": usar_tls,
+    }
+
+
+def servico_email_configurado():
+    config = obter_configuracao_smtp()
+    return bool(config["host"] and config["remetente"])
+
+
+def enviar_email_recuperacao(usuario, link):
+    config = obter_configuracao_smtp()
+    if not config["host"] or not config["remetente"]:
+        raise OSError("Configuração SMTP ausente.")
+
+    mensagem = EmailMessage()
+    mensagem["Subject"] = "Redefinição de senha - Fluxar Emissões"
+    mensagem["From"] = f'{config["remetente_nome"]} <{config["remetente"]}>'
+    mensagem["To"] = usuario.email_recuperacao
+    mensagem.set_content(
+        "Recebemos uma solicitação para redefinir a senha do Fluxar Emissões.\n\n"
+        f"Acesse o link abaixo para definir uma nova senha:\n{link}\n\n"
+        "Este link é válido por 30 minutos e poderá ser utilizado apenas uma vez.\n\n"
+        "Se você não solicitou a alteração, ignore esta mensagem."
+    )
+
+    contexto_ssl = ssl.create_default_context()
+    if config["usar_ssl"]:
+        with smtplib.SMTP_SSL(
+            config["host"],
+            config["porta"],
+            timeout=20,
+            context=contexto_ssl,
+        ) as servidor:
+            if config["usuario"]:
+                servidor.login(config["usuario"], config["senha"])
+            servidor.send_message(mensagem)
+        return
+
+    with smtplib.SMTP(config["host"], config["porta"], timeout=20) as servidor:
+        servidor.ehlo()
+        if config["usar_tls"]:
+            servidor.starttls(context=contexto_ssl)
+            servidor.ehlo()
+        if config["usuario"]:
+            servidor.login(config["usuario"], config["senha"])
+        servidor.send_message(mensagem)
 
 
 def preencher_snapshots_legados():

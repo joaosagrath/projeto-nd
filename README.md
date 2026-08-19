@@ -23,20 +23,55 @@ O nome do documento e o prefixo da numeração são configuráveis. Por padrão,
 7. Se necessário, use **Editar**; ao salvar novamente, o PDF armazenado é regenerado.
 8. Use **WhatsApp** para abrir `wa.me` com uma mensagem que contém o link público do PDF.
 
-## Login e senha
+## Login, senha e recuperação
 
 O painel administrativo é protegido por autenticação. Em uma instalação nova, o usuário inicial é:
 
 - Login: `admin`
 - Senha: `admin`
 
-Altere essas credenciais em **Configurações > Acesso ao sistema** antes de publicar a aplicação. Para trocar o login ou a senha, o sistema exige a senha atual. Novas senhas devem ter pelo menos 8 caracteres.
+Altere essas credenciais em **Configurações > Acesso ao sistema** antes de publicar a aplicação. Nessa mesma tela é possível cadastrar um **e-mail de recuperação**. Para alterar login, e-mail ou senha, o sistema exige a senha atual. Novas senhas devem ter pelo menos 8 caracteres.
 
 As senhas não são armazenadas em texto puro. O banco grava somente o hash gerado pelo Werkzeug. A sessão expira após 12 horas.
 
-A rota pública `/documentos/<token>/pdf` permanece sem login, porque é ela que permite ao tomador abrir o PDF enviado por WhatsApp. As demais telas e APIs administrativas exigem autenticação.
+Na tela de login, o link **Esqueci minha senha** permite solicitar um link temporário por e-mail. O token é aleatório, o banco guarda apenas o hash do token, a validade é de 30 minutos e o link deixa de funcionar depois que a senha é redefinida.
+
+A rota pública `/documentos/<token>/pdf` permanece sem login, porque é ela que permite ao tomador abrir o PDF enviado por WhatsApp. As demais telas e APIs administrativas exigem autenticação, com exceção das rotas de login e recuperação de senha.
 
 A chave usada para assinar a sessão Flask é lida da variável de ambiente `FLUXAR_SECRET_KEY`. Se essa variável não estiver definida, o sistema cria automaticamente `instance/.secret_key` e reutiliza o mesmo valor nas próximas inicializações.
+
+### Configuração do envio de e-mail
+
+Por segurança, a senha da conta SMTP não é armazenada no banco nem na tela de Configurações. Configure o servidor usando variáveis de ambiente:
+
+- `FLUXAR_SMTP_HOST`: servidor SMTP, por exemplo `smtp.gmail.com`.
+- `FLUXAR_SMTP_PORT`: porta do servidor. O padrão é `587` com STARTTLS ou `465` com SSL.
+- `FLUXAR_SMTP_USUARIO`: usuário usado para autenticar no SMTP.
+- `FLUXAR_SMTP_SENHA`: senha ou senha de aplicativo do SMTP.
+- `FLUXAR_SMTP_REMETENTE`: endereço usado como remetente. Se omitido, usa `FLUXAR_SMTP_USUARIO`.
+- `FLUXAR_SMTP_NOME`: nome do remetente. O padrão é `Fluxar Emissões`.
+- `FLUXAR_SMTP_TLS`: `true` ou `false`. O padrão é `true` quando SSL não está ativo.
+- `FLUXAR_SMTP_SSL`: `true` ou `false`. O padrão é `false`.
+
+Depois de configurar as variáveis e reiniciar a aplicação, **Configurações > Acesso ao sistema** mostrará que o envio de recuperação está ativo.
+
+### Reset administrativo de emergência
+
+Se o usuário não tiver acesso ao e-mail ou o SMTP estiver indisponível, execute no servidor:
+
+```bash
+cd ~/projeto-nd
+source .venv/bin/activate
+python reset_senha.py
+```
+
+No Windows, com a `.venv` ativa, execute:
+
+```bat
+python reset_senha.py
+```
+
+O script permite manter ou alterar o login e definir uma nova senha sem conhecer a senha atual. Ele também invalida qualquer link de recuperação pendente.
 
 ## PDFs armazenados no servidor
 
@@ -88,6 +123,7 @@ A consulta é executada quando o CEP possui oito dígitos, ao sair do campo ou a
 - `instance/uploads/`: logotipo atual do emitente.
 - `instance/pdfs/`: PDFs persistidos no servidor.
 - `instance/.secret_key`: chave local usada para proteger as sessões quando `FLUXAR_SECRET_KEY` não estiver configurada.
+- `reset_senha.py`: redefinição administrativa de emergência do login e senha.
 
 ## Banco existente
 

@@ -43,6 +43,9 @@ class Usuario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     login = db.Column(db.String(80), nullable=False, unique=True, index=True)
     senha_hash = db.Column(db.String(255), nullable=False)
+    email_recuperacao = db.Column(db.String(150), nullable=True)
+    reset_token_hash = db.Column(db.String(64), nullable=True, index=True)
+    reset_token_expira_em = db.Column(db.DateTime, nullable=True)
     criado_em = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     atualizado_em = db.Column(
         db.DateTime,

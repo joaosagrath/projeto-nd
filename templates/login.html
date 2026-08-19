@@ -28,7 +28,7 @@
           >
         </div>
 
-        <div class="mb-4">
+        <div class="mb-3">
           <label class="form-label" for="senha">Senha</label>
           <input
             class="form-control form-control-lg"
@@ -38,6 +38,10 @@
             autocomplete="current-password"
             required
           >
+        </div>
+
+        <div class="text-end mb-4">
+          <a class="small text-decoration-none" href="{{ url_for('esqueci_senha') }}">Esqueci minha senha</a>
         </div>
 
         <button class="btn btn-primary btn-lg w-100" type="submit">Entrar</button>
