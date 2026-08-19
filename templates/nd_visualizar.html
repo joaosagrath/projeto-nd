@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}{{ nota.numero_formatado }} - Fluxar ND{% endblock %}
+
+{% block content %}
+{% set emitente_razao = nota.emitente_razao_social if nota.emitente_razao_social is not none else empresa.razao_social %}
+{% set emitente_fantasia = nota.emitente_nome_fantasia if nota.emitente_razao_social is not none else empresa.nome_fantasia %}
+{% set emitente_cnpj = nota.emitente_cnpj if nota.emitente_razao_social is not none else empresa.cnpj %}
+{% set emitente_endereco = nota.emitente_endereco if nota.emitente_razao_social is not none else empresa.endereco_formatado %}
+{% set emitente_telefone = nota.emitente_telefone if nota.emitente_razao_social is not none else empresa.telefone %}
+{% set emitente_email = nota.emitente_email if nota.emitente_razao_social is not none else empresa.email %}
+
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+  <div>
+    <h1 class="h3 mb-1">{{ nota.numero_formatado }}</h1>
+    <p class="text-body-secondary mb-0">Visualização dos dados gravados na emissão.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="{{ url_for('index') }}">Voltar</a>
+    <a class="btn btn-outline-warning" href="{{ url_for('editar_nota', nota_id=nota.id) }}">Editar</a>
+    <a class="btn btn-primary" href="{{ url_for('baixar_pdf', nota_id=nota.id) }}">Baixar PDF</a>
+  </div>
+</div>
+
+<div class="nd-preview bg-white shadow-sm mx-auto">
+  <div class="row g-0 border-bottom border-dark nd-preview-header">
+    <div class="col-md-7 p-3 border-end border-dark d-flex align-items-center">
+      <div class="nd-emitente-layout w-100">
+        <div class="nd-logo-preview">
+          {% if tem_logo %}
+            <img src="{{ url_for('logo_nota', nota_id=nota.id) }}" alt="Logotipo do emitente">
+          {% endif %}
+        </div>
+        <div class="small text-start">
+          <div class="fw-semibold">{{ emitente_razao or 'Fluxar ND' }}</div>
+          {% if emitente_fantasia and emitente_fantasia != emitente_razao %}<div>{{ emitente_fantasia }}</div>{% endif %}
+          {% if emitente_endereco %}<div>{{ emitente_endereco }}</div>{% endif %}
+          {% if emitente_cnpj %}<div>CNPJ: {{ emitente_cnpj|documento_br }}</div>{% endif %}
+          {% if emitente_telefone %}<div>Tel.: {{ emitente_telefone|telefone_br }}</div>{% endif %}
+          {% if emitente_email %}<div>{{ emitente_email }}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-5 p-3 text-center d-flex flex-column justify-content-center">
+      <div class="fw-bold fs-5">NOTA DE DÉBITO</div>
+      <div class="fw-bold">{{ nota.numero_formatado }}</div>
+      <div class="mt-3"><strong>Emissão:</strong> {{ nota.emissao|data_br }}</div>
+      <div><strong>Referência:</strong> {{ nota.referencia or '-' }}</div>
+      <div><strong>Vencimento:</strong> {{ nota.vencimento|data_br }}</div>
+      <div><strong>Condição:</strong> {{ nota.condicao or '-' }}</div>
+    </div>
+  </div>
+
+  <div class="p-3 border-bottom border-dark nd-tomador-preview">
+    <div class="fw-bold mb-2">Tomador</div>
+    <div>{{ nota.tomador_nome_exibicao }}</div>
+    <div class="mt-1">{{ nota.tomador_endereco_exibicao or '-' }}</div>
+    <div class="mt-1">CNPJ/CPF&nbsp;&nbsp;{{ nota.tomador_documento_exibicao|documento_br or '-' }}</div>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-bordered border-dark mb-0">
+      <thead>
+        <tr class="text-center align-middle">
+          <th style="width: 70px;">Item</th>
+          <th>Descrição</th>
+          <th style="width: 120px;">Quant.</th>
+          <th style="width: 140px;">Unit.</th>
+          <th style="width: 140px;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in nota.itens %}
+          <tr>
+            <td class="text-center">{{ loop.index }}</td>
+            <td>{{ item.descricao }}</td>
+            <td class="text-end">{{ item.quantidade|int }}</td>
+            <td class="text-end">{{ item.valor_unitario|brl }}</td>
+            <td class="text-end">{{ item.valor_total|brl }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="border-bottom border-dark p-3">
+    <div class="d-flex justify-content-end gap-4"><strong>Valor total:</strong><strong>{{ nota.valor_total|brl }}</strong></div>
+    <div class="d-flex justify-content-end gap-4"><strong>Outras retenções/descontos:</strong><strong>{{ nota.outras_retencoes|brl }}</strong></div>
+    <hr class="my-2 ms-auto nd-total-divider">
+    <div class="d-flex justify-content-end gap-4 fs-5"><strong>Valor a pagar:</strong><strong>{{ nota.valor_pagar|brl }}</strong></div>
+  </div>
+
+  <div class="p-3 nd-observacoes">
+    <div class="small">Observações:</div>
+    <div class="mt-2" style="white-space: pre-wrap;">{{ nota.observacoes or '' }}</div>
+  </div>
+</div>
+{% endblock %}

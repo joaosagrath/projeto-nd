@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Notas de Débito - Fluxar ND{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+  <div>
+    <h1 class="h3 mb-1">Notas de Débito</h1>
+    <p class="text-body-secondary mb-0">Consulte as NDs geradas e baixe os PDFs.</p>
+  </div>
+  <a class="btn btn-primary" href="{{ url_for('nova_nota') }}">Nova Nota de Débito</a>
+</div>
+
+<div class="card shadow-sm border-0">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>ND</th>
+            <th>Tomador</th>
+            <th>Emissão</th>
+            <th>Vencimento</th>
+            <th class="text-end">Valor</th>
+            <th class="text-end">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for nota in notas %}
+            <tr>
+              <td class="fw-semibold">{{ nota.numero_formatado }}</td>
+              <td>{{ nota.tomador_nome_exibicao }}</td>
+              <td>{{ nota.emissao|data_br }}</td>
+              <td>{{ nota.vencimento|data_br }}</td>
+              <td class="text-end">{{ nota.valor_pagar|brl }}</td>
+              <td class="text-end">
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('visualizar_nota', nota_id=nota.id) }}">Visualizar</a>
+                <a class="btn btn-sm btn-outline-warning" href="{{ url_for('editar_nota', nota_id=nota.id) }}">Editar</a>
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('baixar_pdf', nota_id=nota.id) }}">PDF</a>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="6" class="text-center text-body-secondary py-5">
+                Nenhuma Nota de Débito foi criada ainda.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

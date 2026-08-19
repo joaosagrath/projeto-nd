@@ -1,0 +1,103 @@
+body {
+  min-height: 100vh;
+}
+
+.card-header {
+  background: #fff;
+}
+
+.table > :not(caption) > * > * {
+  vertical-align: middle;
+}
+
+.logo-config-preview {
+  min-height: 150px;
+  border: 1px dashed #ced4da;
+  border-radius: 0.5rem;
+  background: #f8f9fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.logo-config-preview img {
+  max-width: 100%;
+  max-height: 120px;
+  object-fit: contain;
+}
+
+.tomador-resumo {
+  border: 1px solid #dee2e6;
+  border-radius: 0.5rem;
+  background: #f8f9fa;
+  padding: 1rem;
+}
+
+.nd-preview {
+  width: min(100%, 900px);
+  min-height: 1120px;
+  border: 1px solid #212529;
+}
+
+.nd-preview-header {
+  min-height: 190px;
+}
+
+.nd-emitente-layout {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 1rem;
+  align-items: center;
+}
+
+.nd-logo-preview {
+  min-height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nd-logo-preview img {
+  max-width: 130px;
+  max-height: 110px;
+  object-fit: contain;
+}
+
+.nd-tomador-preview {
+  min-height: 130px;
+}
+
+.nd-total-divider {
+  width: 360px;
+}
+
+.nd-observacoes {
+  min-height: 390px;
+}
+
+@media (max-width: 767.98px) {
+  .nd-emitente-layout {
+    grid-template-columns: 100px minmax(0, 1fr);
+  }
+
+  .nd-logo-preview img {
+    max-width: 90px;
+    max-height: 90px;
+  }
+}
+
+.tomador-modal-lista {
+  max-height: 430px;
+  overflow-y: auto;
+  border: 1px solid #dee2e6;
+  border-radius: 0.375rem;
+}
+
+.tomador-modal-lista .sticky-top {
+  z-index: 1;
+}
+
+.tomador-resultado {
+  cursor: default;
+}

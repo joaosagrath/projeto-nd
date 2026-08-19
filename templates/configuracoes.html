@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Configurações - Fluxar ND{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+  <div>
+    <h1 class="h3 mb-1">Configurações</h1>
+    <p class="text-body-secondary mb-0">Dados do emitente exibidos no cabeçalho das Notas de Débito.</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('index') }}">Voltar</a>
+</div>
+
+<form method="post" enctype="multipart/form-data">
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-header fw-semibold">Identificação e logotipo</div>
+    <div class="card-body">
+      <div class="row g-4 align-items-start">
+        <div class="col-lg-4">
+          <label class="form-label" for="logo">Logotipo</label>
+          <div class="logo-config-preview mb-3">
+            {% if empresa.logo_arquivo %}
+              <img src="{{ url_for('logo_empresa') }}" alt="Logotipo da empresa">
+            {% else %}
+              <span class="text-body-secondary small">Nenhum logotipo cadastrado</span>
+            {% endif %}
+          </div>
+          <input class="form-control" type="file" id="logo" name="logo" accept=".png,.jpg,.jpeg,image/png,image/jpeg">
+          <div class="form-text">PNG, JPG ou JPEG, até 3 MB.</div>
+          {% if empresa.logo_arquivo %}
+            <div class="form-check mt-3">
+              <input class="form-check-input" type="checkbox" value="1" id="remover_logo" name="remover_logo">
+              <label class="form-check-label" for="remover_logo">Remover logotipo atual</label>
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="col-lg-8">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label" for="razao_social">Razão social</label>
+              <input class="form-control" id="razao_social" name="razao_social" value="{{ request.form.get('razao_social', empresa.razao_social or '') }}" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="nome_fantasia">Nome fantasia</label>
+              <input class="form-control" id="nome_fantasia" name="nome_fantasia" value="{{ request.form.get('nome_fantasia', empresa.nome_fantasia or '') }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="cnpj">CNPJ</label>
+              <input class="form-control mask-documento" id="cnpj" name="cnpj" value="{{ request.form.get('cnpj', empresa.cnpj|documento_br) }}" inputmode="numeric">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="telefone">Telefone</label>
+              <input class="form-control mask-telefone" id="telefone" name="telefone" value="{{ request.form.get('telefone', empresa.telefone|telefone_br) }}" inputmode="tel">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" for="email">E-mail</label>
+              <input class="form-control" type="email" id="email" name="email" value="{{ request.form.get('email', empresa.email or '') }}">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-header fw-semibold">Endereço</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-8">
+          <label class="form-label" for="logradouro">Logradouro</label>
+          <input class="form-control" id="logradouro" name="logradouro" value="{{ request.form.get('logradouro', empresa.logradouro or empresa.endereco or '') }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="numero">Número</label>
+          <input class="form-control" id="numero" name="numero" value="{{ request.form.get('numero', empresa.numero or '') }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="complemento">Complemento</label>
+          <input class="form-control" id="complemento" name="complemento" value="{{ request.form.get('complemento', empresa.complemento or '') }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="bairro">Bairro</label>
+          <input class="form-control" id="bairro" name="bairro" value="{{ request.form.get('bairro', empresa.bairro or '') }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="cidade">Cidade</label>
+          <input class="form-control" id="cidade" name="cidade" value="{{ request.form.get('cidade', empresa.cidade or '') }}">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label" for="uf">UF</label>
+          <input class="form-control text-uppercase mask-uf" id="uf" name="uf" maxlength="2" value="{{ request.form.get('uf', empresa.uf or '') }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="cep">CEP</label>
+          <input class="form-control mask-cep" id="cep" name="cep" value="{{ request.form.get('cep', empresa.cep|cep_br) }}" inputmode="numeric">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex justify-content-end">
+    <button class="btn btn-primary" type="submit">Salvar configurações</button>
+  </div>
+</form>
+{% endblock %}

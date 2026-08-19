@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+
+{% block title %}{{ titulo_pagina }} - Fluxar ND{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+  <div>
+    <h1 class="h3 mb-1">{{ titulo_pagina }}</h1>
+    <p class="text-body-secondary mb-0">
+      {% if modo_edicao %}
+        Número da nota: <strong>{{ numero_exibicao }}</strong>
+      {% else %}
+        Número reservado: <strong>{{ numero_exibicao }}</strong>
+      {% endif %}
+    </p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('visualizar_nota', nota_id=nota.id) if modo_edicao else url_for('index') }}">Voltar</a>
+</div>
+
+{% if not tem_tomadores %}
+  <div class="alert alert-warning d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+    <div>Cadastre pelo menos um tomador antes de gerar uma Nota de Débito.</div>
+    <a class="btn btn-sm btn-warning" href="{{ url_cadastrar_tomador }}">Cadastrar tomador</a>
+  </div>
+{% endif %}
+
+<form method="post" id="formNotaDebito" action="{{ form_action }}">
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-header fw-semibold">Dados da Nota</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-3">
+          <label class="form-label" for="emissao">Emissão</label>
+          <input class="form-control" type="date" id="emissao" name="emissao" value="{{ form_data.emissao }}" required>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="referencia">Referência</label>
+          <input class="form-control" type="text" id="referencia" name="referencia" value="{{ form_data.referencia }}" placeholder="08/2026">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="vencimento">Vencimento</label>
+          <input class="form-control" type="date" id="vencimento" name="vencimento" value="{{ form_data.vencimento }}" required>
+        </div>
+        <div class="col-md-1">
+          <label class="form-label" for="parcelas">Parcelas</label>
+          <input class="form-control" type="number" id="parcelas" name="parcelas" min="1" max="99" step="1" value="{{ form_data.parcelas }}" required>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label" for="forma_pagamento">Forma</label>
+          <input class="form-control text-uppercase" type="text" id="forma_pagamento" name="forma_pagamento" value="{{ form_data.forma_pagamento }}" list="formasPagamento" required>
+          <datalist id="formasPagamento">
+            <option value="DINHEIRO"></option>
+            <option value="PIX"></option>
+            <option value="BOLETO"></option>
+            <option value="TRANSFERÊNCIA"></option>
+            <option value="CARTÃO"></option>
+          </datalist>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-header d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+      <span class="fw-semibold">Tomador</span>
+      <a class="btn btn-sm btn-outline-primary" href="{{ url_cadastrar_tomador }}">Cadastrar novo tomador</a>
+    </div>
+    <div class="card-body">
+      <label class="form-label" for="tomadorNomeSelecionado">Tomador selecionado</label>
+      <input type="hidden" id="tomador_id" name="tomador_id" value="{{ tomador_selecionado_json.id if tomador_selecionado_json else '' }}">
+      <div class="input-group">
+        <input
+          class="form-control"
+          type="text"
+          id="tomadorNomeSelecionado"
+          value="{{ tomador_selecionado_json.nome if tomador_selecionado_json else '' }}"
+          placeholder="Nenhum tomador selecionado"
+          readonly
+        >
+        <button
+          class="btn btn-outline-primary"
+          type="button"
+          id="btnAbrirBuscaTomador"
+          data-bs-toggle="modal"
+          data-bs-target="#modalBuscarTomador"
+          {% if not tem_tomadores %}disabled{% endif %}
+        >
+          Buscar tomador
+        </button>
+      </div>
+
+      <div class="tomador-resumo mt-3 {% if not tomador_selecionado_json %}d-none{% endif %}" id="tomadorResumo">
+        <div class="row g-3 small">
+          <div class="col-md-4">
+            <span class="text-body-secondary d-block">CPF / CNPJ</span>
+            <strong id="tomadorResumoDocumento">{{ tomador_selecionado_json.documento if tomador_selecionado_json else '-' }}</strong>
+          </div>
+          <div class="col-md-8">
+            <span class="text-body-secondary d-block">Endereço</span>
+            <strong id="tomadorResumoEndereco">{{ tomador_selecionado_json.endereco if tomador_selecionado_json else '-' }}</strong>
+          </div>
+          <div class="col-md-4">
+            <span class="text-body-secondary d-block">Telefone</span>
+            <strong id="tomadorResumoTelefone">{{ tomador_selecionado_json.telefone if tomador_selecionado_json else '-' }}</strong>
+          </div>
+          <div class="col-md-8">
+            <span class="text-body-secondary d-block">E-mail</span>
+            <strong id="tomadorResumoEmail">{{ tomador_selecionado_json.email if tomador_selecionado_json else '-' }}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center gap-3">
+      <span class="fw-semibold">Itens</span>
+      <button class="btn btn-sm btn-outline-primary" type="button" id="btnAdicionarItem">Adicionar item</button>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table align-middle mb-0" id="tabelaItens">
+          <thead class="table-light">
+            <tr>
+              <th style="min-width: 320px;">Descrição</th>
+              <th style="width: 140px;">Quantidade</th>
+              <th style="width: 170px;">Valor unitário</th>
+              <th class="text-end" style="width: 170px;">Total</th>
+              <th style="width: 70px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in itens_form %}
+              <tr class="linha-item">
+                <td>
+                  <input class="form-control" type="text" name="item_descricao[]" value="{{ item.descricao }}" required>
+                </td>
+                <td>
+                  <input class="form-control item-quantidade" type="number" name="item_quantidade[]" value="{{ item.quantidade }}" min="1" step="1" inputmode="numeric" required>
+                </td>
+                <td>
+                  <input class="form-control item-unitario campo-moeda" type="text" name="item_valor_unitario[]" value="{{ item.valor_unitario }}" inputmode="decimal" autocomplete="off" required>
+                </td>
+                <td class="text-end fw-semibold item-total">R$ 0,00</td>
+                <td class="text-end">
+                  <button class="btn btn-sm btn-outline-danger btn-remover-item" type="button" aria-label="Remover item">×</button>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4 mb-4">
+    <div class="col-lg-7">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-header fw-semibold">Observações</div>
+        <div class="card-body">
+          <textarea class="form-control" id="observacoes" name="observacoes" rows="6">{{ form_data.observacoes }}</textarea>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-header fw-semibold">Totais</div>
+        <div class="card-body">
+          <div class="d-flex justify-content-between mb-3">
+            <span>Valor total:</span>
+            <strong id="resumoValorTotal">R$ 0,00</strong>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="outras_retencoes">Outras retenções/descontos</label>
+            <input class="form-control text-end campo-moeda" type="text" id="outras_retencoes" name="outras_retencoes" value="{{ form_data.outras_retencoes }}" inputmode="decimal" autocomplete="off">
+          </div>
+          <hr>
+          <div class="d-flex justify-content-between fs-5">
+            <span>Valor a pagar:</span>
+            <strong id="resumoValorPagar">R$ 0,00</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex justify-content-end gap-2">
+    <a class="btn btn-outline-secondary" href="{{ url_for('visualizar_nota', nota_id=nota.id) if modo_edicao else url_for('index') }}">Cancelar</a>
+    <button class="btn btn-primary" type="submit" {% if not tem_tomadores %}disabled{% endif %}>{{ texto_submit }}</button>
+  </div>
+</form>
+
+<div class="modal fade" id="modalBuscarTomador" tabindex="-1" aria-labelledby="modalBuscarTomadorLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title fs-5" id="modalBuscarTomadorLabel">Buscar tomador</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label" for="buscaTomador">Nome, CPF ou CNPJ</label>
+          <input class="form-control" type="search" id="buscaTomador" placeholder="Digite para pesquisar..." autocomplete="off">
+          <div class="form-text">A pesquisa retorna até 50 tomadores por vez.</div>
+        </div>
+
+        <div class="table-responsive tomador-modal-lista">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light sticky-top">
+              <tr>
+                <th>Nome / Razão social</th>
+                <th style="width: 190px;">CPF / CNPJ</th>
+                <th>Endereço</th>
+                <th class="text-end" style="width: 110px;"></th>
+              </tr>
+            </thead>
+            <tbody id="resultadosTomadores">
+              <tr>
+                <td colspan="4" class="text-center text-body-secondary py-4">Abra a busca para listar os tomadores.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <a class="btn btn-outline-primary me-auto" href="{{ url_cadastrar_tomador }}">Cadastrar novo tomador</a>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="application/json" id="tomadorSelecionadoData">{{ tomador_selecionado_json|tojson }}</script>
+<script type="application/json" id="configNotaData">{{ {'url_busca_tomadores': url_for('api_buscar_tomadores')}|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/nd_form.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}{{ titulo }} - Fluxar ND{% endblock %}
+
+{% block content %}
+{% if destino == 'nova_nota' %}
+  {% set url_retorno = url_for('nova_nota') %}
+{% elif destino == 'editar_nota' and nota_id %}
+  {% set url_retorno = url_for('editar_nota', nota_id=nota_id) %}
+{% else %}
+  {% set url_retorno = url_for('listar_tomadores') %}
+{% endif %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+  <div>
+    <h1 class="h3 mb-1">{{ titulo }}</h1>
+    <p class="text-body-secondary mb-0">Dados utilizados para preencher automaticamente a Nota de Débito.</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_retorno }}">Voltar</a>
+</div>
+
+<form method="post">
+  <input type="hidden" name="next" value="{{ destino }}">
+  <input type="hidden" name="nota_id" value="{{ nota_id or '' }}">
+
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-header fw-semibold">Identificação</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-8">
+          <label class="form-label" for="nome">Nome / Razão social</label>
+          <input class="form-control" id="nome" name="nome" value="{{ request.form.get('nome', tomador.nome or '') }}" required autofocus>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="documento">CPF / CNPJ</label>
+          <input class="form-control mask-documento" id="documento" name="documento" value="{{ request.form.get('documento', tomador.documento|documento_br) }}" inputmode="numeric">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="telefone">Telefone</label>
+          <input class="form-control mask-telefone" id="telefone" name="telefone" value="{{ request.form.get('telefone', tomador.telefone|telefone_br) }}" inputmode="tel">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="email">E-mail</label>
+          <input class="form-control" type="email" id="email" name="email" value="{{ request.form.get('email', tomador.email or '') }}">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-header fw-semibold">Endereço</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-8">
+          <label class="form-label" for="logradouro">Logradouro</label>
+          <input class="form-control" id="logradouro" name="logradouro" value="{{ request.form.get('logradouro', tomador.logradouro or tomador.endereco or '') }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="numero">Número</label>
+          <input class="form-control" id="numero" name="numero" value="{{ request.form.get('numero', tomador.numero or '') }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="complemento">Complemento</label>
+          <input class="form-control" id="complemento" name="complemento" value="{{ request.form.get('complemento', tomador.complemento or '') }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="bairro">Bairro</label>
+          <input class="form-control" id="bairro" name="bairro" value="{{ request.form.get('bairro', tomador.bairro or '') }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="cidade">Cidade</label>
+          <input class="form-control" id="cidade" name="cidade" value="{{ request.form.get('cidade', tomador.cidade or '') }}">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label" for="uf">UF</label>
+          <input class="form-control text-uppercase mask-uf" id="uf" name="uf" maxlength="2" value="{{ request.form.get('uf', tomador.uf or '') }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label" for="cep">CEP</label>
+          <input class="form-control mask-cep" id="cep" name="cep" value="{{ request.form.get('cep', tomador.cep|cep_br) }}" inputmode="numeric">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex justify-content-end gap-2">
+    <a class="btn btn-outline-secondary" href="{{ url_retorno }}">Cancelar</a>
+    <button class="btn btn-primary" type="submit">Salvar tomador</button>
+  </div>
+</form>
+{% endblock %}
