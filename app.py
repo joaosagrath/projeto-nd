@@ -77,6 +77,7 @@ def criar_app():
     db.init_app(app)
 
     registrar_filtros(app)
+    registrar_pwa(app)
     registrar_autenticacao(app)
     registrar_rotas(app)
 
@@ -133,20 +134,40 @@ def obter_secret_key():
         pass
     return chave
 
+def registrar_pwa(app):
+    @app.route("/service-worker.js")
+    def service_worker():
+        resposta = send_from_directory(
+            app.static_folder,
+            "service-worker.js",
+            mimetype="application/javascript",
+        )
+        resposta.headers["Cache-Control"] = "no-cache"
+        return resposta
 
 def registrar_autenticacao(app):
     @app.before_request
     def proteger_aplicacao():
-        endpoints_publicos = {"login", "esqueci_senha", "redefinir_senha", "pdf_publico", "static"}
+        endpoints_publicos = {
+            "login",
+            "esqueci_senha",
+            "redefinir_senha",
+            "pdf_publico",
+            "service_worker",
+            "static",
+        }
+
         if request.endpoint in endpoints_publicos:
             return None
 
         usuario_id = session.get("usuario_id")
+
         if not usuario_id:
             destino = request.full_path if request.query_string else request.path
             return redirect(url_for("login", next=destino))
 
         usuario = db.session.get(Usuario, usuario_id)
+
         if usuario is None:
             session.clear()
             return redirect(url_for("login"))

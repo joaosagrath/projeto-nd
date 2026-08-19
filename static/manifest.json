@@ -1,10 +1,13 @@
 {
-  "name": "Fluxar Emissoes",
+  "id": "/",
+  "name": "Fluxar Emissões",
   "short_name": "Fluxar",
+  "description": "Emissão e gerenciamento de faturas, notas de débito, medições e documentos comerciais.",
+  "lang": "pt-BR",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "background_color": "#5408c3",
   "theme_color": "#5408c3",
   "icons": [
     {
