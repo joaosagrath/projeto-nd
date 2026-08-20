@@ -894,9 +894,16 @@ def registrar_rotas(app):
 
         obter_ou_gerar_pdf_servidor(nota)
         link_pdf = url_for("pdf_publico", token=nota.pdf_token, _external=True)
+        nome_empresa = (
+            nota.emitente_nome_fantasia
+            or nota.emitente_razao_social
+            or "Fluxar Emissões"
+        ).strip()
         mensagem = (
-            f"Olá, {nota.tomador_nome_exibicao}. "
-            f"Segue o link do documento {nota.numero_formatado}: {link_pdf}"
+            f"Prezado, {nota.tomador_nome_exibicao}.\n\n"
+            f"Segue o link do documento {nota.numero_formatado}:\n"
+            f"Emitido por {nome_empresa}\n\n"
+            f"{link_pdf}"
         )
         return redirect(f"https://wa.me/{telefone}?text={quote(mensagem, safe='')}")
 
@@ -1689,7 +1696,7 @@ def obter_itens_formulario(form):
     if not descricoes:
         return [
             {
-                "descricao": "Arrendamento de Veículo conforme contrato(s):",
+                "descricao": "Descrição do serviço prestado",
                 "quantidade": "1",
                 "valor_unitario": "0,00",
             }
