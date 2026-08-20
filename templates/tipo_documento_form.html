@@ -6,7 +6,8 @@
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
   <div>
     <h1 class="h3 mb-1">{{ titulo }}</h1>
-    <p class="text-body-secondary mb-0">Defina a identificação, a sequência numérica e a observação padrão deste tipo.</p>
+    <p class="text-body-secondary mb-0">Defina a identificação, a sequência numérica e a observação padrão deste tipo.
+    </p>
   </div>
   <a class="btn btn-outline-secondary" href="{{ url_for('configuracoes') }}">Voltar</a>
 </div>
@@ -18,44 +19,26 @@
       <div class="row g-3">
         <div class="col-md-7">
           <label class="form-label" for="nome">Nome do documento</label>
-          <input
-            class="form-control"
-            id="nome"
-            name="nome"
-            maxlength="120"
-            value="{{ request.form.get('nome', tipo.nome or '') }}"
-            placeholder="Ex.: Nota de Débito"
-            required
-          >
+          <input class="form-control text-uppercase" id="nome" name="nome" maxlength="120"
+            value="{{ request.form.get('nome', tipo.nome or '') }}" oninput="this.value = this.value.toUpperCase()"
+            placeholder="Ex.: Nota de Débito" required>
           <div class="form-text">É o título que aparecerá no documento e no PDF.</div>
         </div>
 
         <div class="col-md-2">
           <label class="form-label" for="prefixo">Prefixo</label>
-          <input
-            class="form-control text-uppercase"
-            id="prefixo"
-            name="prefixo"
-            maxlength="20"
+          <input class="form-control text-uppercase" id="prefixo" name="prefixo" maxlength="20"
             value="{{ request.form.get('prefixo', tipo.prefixo or '') }}"
-            placeholder="ND"
-          >
+            oninput="this.value = this.value.toUpperCase()" placeholder="ND">
           <div class="form-text">Pode ficar vazio.</div>
         </div>
 
         <div class="col-md-3">
           <label class="form-label" for="proximo_numero">Próximo número</label>
-          <input
-            class="form-control"
-            type="number"
-            id="proximo_numero"
-            name="proximo_numero"
-            min="1"
-            step="1"
-            value="{{ request.form.get('proximo_numero', tipo.proximo_numero or 1) }}"
-            required
-          >
-          <div class="form-text">Ex.: 253 gera {{ (request.form.get('prefixo', tipo.prefixo or '') or '')|upper }}00253.</div>
+          <input class="form-control" type="number" id="proximo_numero" name="proximo_numero" min="1" step="1"
+            value="{{ request.form.get('proximo_numero', tipo.proximo_numero or 1) }}" required>
+          <div class="form-text">Ex.: 253 gera {{ (request.form.get('prefixo', tipo.prefixo or '') or '')|upper }}00253.
+          </div>
         </div>
       </div>
     </div>
@@ -64,13 +47,8 @@
   <div class="card shadow-sm border-0 mb-4">
     <div class="card-header fw-semibold">Observação padrão</div>
     <div class="card-body">
-      <textarea
-        class="form-control"
-        id="observacao_padrao"
-        name="observacao_padrao"
-        rows="6"
-        placeholder="Texto que será carregado automaticamente ao criar um novo documento deste tipo."
-      >{{ request.form.get('observacao_padrao', tipo.observacao_padrao or '') }}</textarea>
+      <textarea class="form-control" id="observacao_padrao" name="observacao_padrao" rows="6"
+        placeholder="Texto que será carregado automaticamente ao criar um novo documento deste tipo.">{{ request.form.get('observacao_padrao', tipo.observacao_padrao or '') }}</textarea>
       <div class="form-text">Na emissão, o usuário poderá editar ou remover este texto sem alterar o modelo.</div>
     </div>
   </div>
@@ -78,23 +56,14 @@
   <div class="card shadow-sm border-0 mb-4">
     <div class="card-body">
       <div class="form-check form-switch">
-        <input
-          class="form-check-input"
-          type="checkbox"
-          role="switch"
-          id="ativo"
-          name="ativo"
-          value="1"
-          {% if request.method == 'POST' %}
-            {% if request.form.get('ativo') == '1' %}checked{% endif %}
-          {% elif tipo.ativo %}
-            checked
-          {% endif %}
-        >
+        <input class="form-check-input" type="checkbox" role="switch" id="ativo" name="ativo" value="1" {% if
+          request.method=='POST' %} {% if request.form.get('ativo')=='1' %}checked{% endif %} {% elif tipo.ativo %}
+          checked {% endif %}>
         <label class="form-check-label" for="ativo">Tipo ativo para novas emissões</label>
       </div>
       {% if modo_edicao %}
-        <div class="form-text mt-2">Tipos inativos continuam vinculados aos documentos já emitidos, mas não aparecem na criação de novos documentos.</div>
+      <div class="form-text mt-2">Tipos inativos continuam vinculados aos documentos já emitidos, mas não aparecem na
+        criação de novos documentos.</div>
       {% endif %}
     </div>
   </div>
