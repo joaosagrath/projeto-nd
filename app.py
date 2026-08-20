@@ -39,6 +39,8 @@ from services.pdf_service import gerar_pdf_nota
 from werkzeug.security import check_password_hash, generate_password_hash
 from dotenv import load_dotenv
 
+from build_config import DATA_BUILD_EXECUTAVEL, DIAS_TESTE_EXECUTAVEL
+
 
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 
@@ -56,6 +58,48 @@ TAMANHO_MAX_LOGO = 3 * 1024 * 1024
 load_dotenv(BASE_DIR / ".env")
 
 
+def obter_periodo_teste_executavel():
+    resultado = {
+        "data_build": None,
+        "dias_teste": None,
+        "data_bloqueio": None,
+        "dias_restantes": None,
+        "expirado": False,
+    }
+
+    if not getattr(sys, "frozen", False):
+        return resultado
+
+    if not DATA_BUILD_EXECUTAVEL or DIAS_TESTE_EXECUTAVEL is None:
+        return resultado
+
+    try:
+        data_build = date.fromisoformat(str(DATA_BUILD_EXECUTAVEL))
+        dias_teste = int(DIAS_TESTE_EXECUTAVEL)
+    except (TypeError, ValueError):
+        return resultado
+
+    if dias_teste <= 0:
+        return resultado
+
+    data_bloqueio = data_build + timedelta(days=dias_teste)
+    dias_restantes = (data_bloqueio - date.today()).days
+
+    resultado.update(
+        {
+            "data_build": data_build,
+            "dias_teste": dias_teste,
+            "data_bloqueio": data_bloqueio,
+            "dias_restantes": max(dias_restantes, 0),
+            "expirado": dias_restantes <= 0,
+        }
+    )
+    return resultado
+
+
+PERIODO_TESTE_EXECUTAVEL = obter_periodo_teste_executavel()
+
+
 def criar_app():
     INSTANCE_DIR.mkdir(parents=True, exist_ok=True)
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -67,6 +111,20 @@ def criar_app():
         static_folder=str(RESOURCE_DIR / "static"),
     )
     app.config["MODO_EXECUTAVEL"] = bool(getattr(sys, "frozen", False))
+    app.config["DATA_BUILD_EXECUTAVEL"] = (
+        PERIODO_TESTE_EXECUTAVEL["data_build"].isoformat()
+        if PERIODO_TESTE_EXECUTAVEL["data_build"]
+        else None
+    )
+    app.config["DIAS_TESTE_EXECUTAVEL"] = PERIODO_TESTE_EXECUTAVEL["dias_teste"]
+    app.config["DATA_BLOQUEIO_TESTE"] = (
+        PERIODO_TESTE_EXECUTAVEL["data_bloqueio"].isoformat()
+        if PERIODO_TESTE_EXECUTAVEL["data_bloqueio"]
+        else None
+    )
+    app.config["DIAS_TESTE_RESTANTES"] = PERIODO_TESTE_EXECUTAVEL["dias_restantes"]
+    app.config["TESTE_EXPIRADO"] = PERIODO_TESTE_EXECUTAVEL["expirado"]
+    app.config["AVISO_TESTE_EXECUCAO_ID"] = secrets.token_hex(8)
     app.config["SECRET_KEY"] = obter_secret_key()
     app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{INSTANCE_DIR / 'fluxar_nd.db'}"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -151,6 +209,9 @@ def registrar_autenticacao(app):
     @app.before_request
     def proteger_aplicacao():
         if app.config.get("MODO_EXECUTAVEL"):
+            if app.config.get("TESTE_EXPIRADO") and request.endpoint != "encerrar_aplicacao":
+                return redirect(url_for("encerrar_aplicacao", motivo="teste"))
+
             g.usuario = Usuario.query.first()
             return None
 
@@ -228,13 +289,24 @@ def registrar_rotas(app):
         flash("Sessão encerrada.", "success")
         return redirect(url_for("login"))
 
-    @app.route("/encerrar-aplicacao", methods=["POST"])
+    @app.route("/encerrar-aplicacao", methods=["GET", "POST"])
     def encerrar_aplicacao():
         if not app.config.get("MODO_EXECUTAVEL"):
             abort(404)
 
-        threading.Timer(0.8, lambda: os._exit(0)).start()
-        return render_template("encerrando.html")
+        teste_encerrado = (
+            request.method == "GET"
+            and request.args.get("motivo") == "teste"
+            and app.config.get("TESTE_EXPIRADO")
+        )
+        if request.method == "GET" and not teste_encerrado:
+            abort(404)
+
+        threading.Timer(1.5, lambda: os._exit(0)).start()
+        return render_template(
+            "encerrando.html",
+            teste_encerrado=teste_encerrado,
+        )
 
     @app.route("/esqueci-senha", methods=["GET", "POST"])
     def esqueci_senha():
@@ -2022,9 +2094,6 @@ def formatar_brl(valor):
     return f"R$ {texto}"
 
 
-app = criar_app()
-
-
 def fechar_splash_pyinstaller():
     if not getattr(sys, "frozen", False):
         return
@@ -2040,6 +2109,10 @@ def fechar_splash_pyinstaller():
         pass
 
 
+
+app = criar_app()
+
+
 def executar_aplicacao_local():
     host = "127.0.0.1"
     port = 5000
@@ -2047,7 +2120,10 @@ def executar_aplicacao_local():
 
     if modo_executavel:
         fechar_splash_pyinstaller()
-        url = f"http://{host}:{port}"
+        if app.config.get("TESTE_EXPIRADO"):
+            url = f"http://{host}:{port}/encerrar-aplicacao?motivo=teste"
+        else:
+            url = f"http://{host}:{port}"
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
 
     app.run(

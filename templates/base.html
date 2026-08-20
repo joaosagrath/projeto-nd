@@ -21,6 +21,9 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
 <body class="bg-body-tertiary">
+  {% if config.get('MODO_EXECUTAVEL') %}
+    <!-- Fluxar Executável | Build: {{ config.get('DATA_BUILD_EXECUTAVEL') or 'sem data' }} | Dias de teste: {{ config.get('DIAS_TESTE_EXECUTAVEL') if config.get('DIAS_TESTE_EXECUTAVEL') is not none else 'ilimitado' }} | Restantes: {{ config.get('DIAS_TESTE_RESTANTES') if config.get('DIAS_TESTE_RESTANTES') is not none else 'ilimitado' }} -->
+  {% endif %}
   {% if session.get('usuario_id') or config.get('MODO_EXECUTAVEL') %}
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
       <div class="container">
@@ -87,6 +90,26 @@
     {% block content %}{% endblock %}
   </main>
 
+  {% set dias_teste_restantes = config.get('DIAS_TESTE_RESTANTES') %}
+  {% if config.get('MODO_EXECUTAVEL') and request.endpoint != 'encerrar_aplicacao' and dias_teste_restantes is not none and 1 <= dias_teste_restantes <= 3 %}
+    <div class="modal fade" id="modalAvisoExpiracaoTeste" tabindex="-1" aria-labelledby="modalAvisoExpiracaoTesteLabel" aria-hidden="true">
+      <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 class="modal-title fs-5" id="modalAvisoExpiracaoTesteLabel">Versão de teste</h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+          </div>
+          <div class="modal-body">
+            Essa versão de teste expira em <strong>{{ dias_teste_restantes }} dia{% if dias_teste_restantes != 1 %}s{% endif %}</strong>.
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Entendi</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
   <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}"></script>
   {% if session.get('usuario_id') or config.get('MODO_EXECUTAVEL') %}
     <script src="{{ url_for('static', filename='js/masks.js') }}"></script>
@@ -94,6 +117,24 @@
   {% endif %}
 
   <script>
+    {% if config.get('MODO_EXECUTAVEL') and request.endpoint != 'encerrar_aplicacao' and dias_teste_restantes is not none and 1 <= dias_teste_restantes <= 3 %}
+      document.addEventListener("DOMContentLoaded", function () {
+        const execucaoId = {{ config.get('AVISO_TESTE_EXECUCAO_ID', '')|tojson }};
+        const chaveAviso = `fluxar-aviso-expiracao-teste-${execucaoId}`;
+        if (sessionStorage.getItem(chaveAviso) === "1") {
+          return;
+        }
+
+        const elementoModal = document.getElementById("modalAvisoExpiracaoTeste");
+        if (!elementoModal) {
+          return;
+        }
+
+        sessionStorage.setItem(chaveAviso, "1");
+        bootstrap.Modal.getOrCreateInstance(elementoModal).show();
+      });
+    {% endif %}
+
     async function registrarServiceWorker() {
       if (!("serviceWorker" in navigator)) {
         return;

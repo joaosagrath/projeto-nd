@@ -39,7 +39,11 @@
 </head>
 <body>
   <div class="mensagem">
-    <h1>Fluxar Emissões encerrado</h1>
+    {% if teste_encerrado %}
+      <h1>Período de teste encerrado!</h1>
+    {% else %}
+      <h1>Fluxar Emissões encerrado</h1>
+    {% endif %}
     <p>Você já pode fechar esta aba do navegador.</p>
   </div>
 </body>
