@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import Numeric
+from sqlalchemy import Numeric, UniqueConstraint
 
 
 db = SQLAlchemy()
@@ -73,8 +73,6 @@ class Empresa(db.Model):
     telefone = db.Column(db.String(30), nullable=True)
     email = db.Column(db.String(150), nullable=True)
     logo_arquivo = db.Column(db.String(255), nullable=True)
-    documento_nome = db.Column(db.String(120), nullable=False, default="NOTA DE DÉBITO")
-    documento_prefixo = db.Column(db.String(20), nullable=False, default="ND")
     criado_em = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     atualizado_em = db.Column(
         db.DateTime,
@@ -96,15 +94,33 @@ class Empresa(db.Model):
             self.endereco,
         )
 
-    @property
-    def documento_nome_exibicao(self):
-        return (self.documento_nome or "NOTA DE DÉBITO").strip()
+
+class TipoDocumento(db.Model):
+    __tablename__ = "tipos_documento"
+
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(120), nullable=False, unique=True, index=True)
+    prefixo = db.Column(db.String(20), nullable=False, unique=True, default="")
+    proximo_numero = db.Column(db.Integer, nullable=False, default=1)
+    observacao_padrao = db.Column(db.Text, nullable=True)
+    ativo = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    criado_em = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    atualizado_em = db.Column(
+        db.DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    notas = db.relationship("NotaDebito", back_populates="tipo_documento")
 
     @property
-    def documento_prefixo_exibicao(self):
-        if self.documento_prefixo is None:
-            return "ND"
-        return self.documento_prefixo.strip()
+    def prefixo_exibicao(self):
+        return (self.prefixo or "").strip()
+
+    @property
+    def proximo_numero_formatado(self):
+        return f"{self.prefixo_exibicao}{int(self.proximo_numero or 1):05d}"
 
 
 class Tomador(db.Model):
@@ -149,12 +165,25 @@ class Tomador(db.Model):
 
 class NotaDebito(db.Model):
     __tablename__ = "notas_debito"
+    __table_args__ = (
+        UniqueConstraint(
+            "tipo_documento_id",
+            "numero_sequencial",
+            name="uq_notas_tipo_numero",
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
-    numero_sequencial = db.Column(db.Integer, nullable=False, unique=True, index=True)
+    tipo_documento_id = db.Column(
+        db.Integer,
+        db.ForeignKey("tipos_documento.id"),
+        nullable=False,
+        index=True,
+    )
+    numero_sequencial = db.Column(db.Integer, nullable=False, index=True)
     emissao = db.Column(db.Date, nullable=False)
     referencia = db.Column(db.String(30), nullable=True)
-    vencimento = db.Column(db.Date, nullable=False)
+    vencimento = db.Column(db.Date, nullable=True)
     condicao = db.Column(db.String(100), nullable=True)
     observacoes = db.Column(db.Text, nullable=True)
     outras_retencoes = db.Column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
@@ -162,8 +191,8 @@ class NotaDebito(db.Model):
     valor_pagar = db.Column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
     tomador_id = db.Column(db.Integer, db.ForeignKey("tomadores.id"), nullable=False)
 
-    documento_nome = db.Column(db.String(120), nullable=True)
-    documento_prefixo = db.Column(db.String(20), nullable=True)
+    documento_nome = db.Column(db.String(120), nullable=False)
+    documento_prefixo = db.Column(db.String(20), nullable=False, default="")
     pdf_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
 
     tomador_nome = db.Column(db.String(180), nullable=True)
@@ -187,6 +216,7 @@ class NotaDebito(db.Model):
         onupdate=datetime.utcnow,
     )
 
+    tipo_documento = db.relationship("TipoDocumento", back_populates="notas")
     tomador = db.relationship("Tomador", back_populates="notas")
     itens = db.relationship(
         "NotaDebitoItem",
@@ -197,13 +227,11 @@ class NotaDebito(db.Model):
 
     @property
     def documento_nome_exibicao(self):
-        return (self.documento_nome or "NOTA DE DÉBITO").strip()
+        return (self.documento_nome or "DOCUMENTO").strip()
 
     @property
     def documento_prefixo_exibicao(self):
-        if self.documento_prefixo is None:
-            return "ND"
-        return self.documento_prefixo.strip()
+        return (self.documento_prefixo or "").strip()
 
     @property
     def numero_formatado(self):

@@ -11,10 +11,52 @@
   <a class="btn btn-primary" href="{{ url_for('novo_tomador') }}">Novo tomador</a>
 </div>
 
-<div class="card shadow-sm border-0">
+<div class="card shadow-sm border-0 mb-4">
+  <div class="card-body">
+    <form method="get" action="{{ url_for('listar_tomadores') }}">
+      <div class="row g-3">
+        <div class="col-12 col-md-3">
+          <label class="form-label" for="filtroNome">Nome / Razão social</label>
+          <input class="form-control" type="text" id="filtroNome" name="nome" value="{{ request.args.get('nome', '') }}" placeholder="Nome ou razão social">
+        </div>
+
+        <div class="col-12 col-md-2">
+          <label class="form-label" for="filtroDocumento">CPF / CNPJ</label>
+          <input class="form-control mask-documento" type="text" inputmode="numeric" id="filtroDocumento" name="documento" value="{{ request.args.get('documento', '') }}" placeholder="CPF ou CNPJ">
+        </div>
+
+        <div class="col-12 col-md-2">
+          <label class="form-label" for="filtroLocalidade">Localidade</label>
+          <input class="form-control" type="text" id="filtroLocalidade" name="localidade" value="{{ request.args.get('localidade', '') }}" placeholder="Cidade, UF ou bairro">
+        </div>
+
+        <div class="col-12 col-md-2">
+          <label class="form-label" for="filtroTelefone">Telefone</label>
+          <input class="form-control mask-telefone" type="text" inputmode="numeric" id="filtroTelefone" name="telefone" value="{{ request.args.get('telefone', '') }}" placeholder="Telefone">
+        </div>
+
+        <div class="col-12 col-md-1">
+          <label class="form-label" for="filtroPorPagina">Itens</label>
+          <select class="form-select" id="filtroPorPagina" name="per_page">
+            {% for quantidade in [10, 20, 30] %}
+              <option value="{{ quantidade }}" {% if request.args.get('per_page', '10')|int == quantidade %}selected{% endif %}>{{ quantidade }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-12 col-md-2 d-flex align-items-end gap-2">
+          <a class="btn btn-outline-secondary w-100" href="{{ url_for('listar_tomadores') }}">Limpar</a>
+          <button class="btn btn-primary w-100" type="submit">Filtrar</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card shadow-sm border-0 listagem-responsive">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0">
+      <table class="table table-hover align-middle mb-0 responsive-card-table">
         <thead class="table-light">
           <tr>
             <th>Nome / Razão social</th>
@@ -26,30 +68,31 @@
           </tr>
         </thead>
         <tbody>
-          {% for tomador in tomadores %}
+          {% for tomador in tomadores.items %}
+            {% set qtd_documentos = contagens_documentos.get(tomador.id, 0) %}
             <tr>
-              <td class="fw-semibold">{{ tomador.nome }}</td>
-              <td>{{ tomador.documento|documento_br or '-' }}</td>
-              <td>
+              <td class="fw-semibold" data-label="Nome / Razão social">{{ tomador.nome }}</td>
+              <td data-label="CPF / CNPJ">{{ tomador.documento|documento_br or '-' }}</td>
+              <td data-label="Localidade">
                 {% if tomador.cidade %}
                   {{ tomador.cidade }}{% if tomador.uf %}/{{ tomador.uf }}{% endif %}
                 {% else %}
                   <span class="text-body-secondary">-</span>
                 {% endif %}
               </td>
-              <td>{{ tomador.telefone|telefone_br or '-' }}</td>
-              <td class="text-center">{{ tomador.notas|length }}</td>
-              <td class="text-end text-nowrap">
+              <td data-label="Telefone">{{ tomador.telefone|telefone_br or '-' }}</td>
+              <td class="text-center" data-label="Documentos">{{ qtd_documentos }}</td>
+              <td class="text-end text-nowrap responsive-actions" data-label="Ações">
                 <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('editar_tomador', tomador_id=tomador.id) }}">Editar</a>
                 <form class="d-inline" method="post" action="{{ url_for('excluir_tomador', tomador_id=tomador.id) }}" onsubmit="return confirm('Excluir este tomador?');">
-                  <button class="btn btn-sm btn-outline-danger" type="submit" {% if tomador.notas %}disabled title="Tomador com documentos não pode ser excluído"{% endif %}>Excluir</button>
+                  <button class="btn btn-sm btn-outline-danger" type="submit" {% if qtd_documentos > 0 %}disabled title="Tomador com documentos não pode ser excluído"{% endif %}>Excluir</button>
                 </form>
               </td>
             </tr>
           {% else %}
-            <tr>
+            <tr class="responsive-empty-row">
               <td colspan="6" class="text-center text-body-secondary py-5">
-                Nenhum tomador cadastrado ainda.
+                Nenhum tomador encontrado.
               </td>
             </tr>
           {% endfor %}
@@ -57,5 +100,37 @@
       </table>
     </div>
   </div>
+
+  {% if tomadores.total > 0 %}
+    <div class="card-footer bg-body d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+      <div class="small text-body-secondary">
+        Exibindo {{ ((tomadores.page - 1) * tomadores.per_page) + 1 }}–{{ [tomadores.page * tomadores.per_page, tomadores.total]|min }} de {{ tomadores.total }} tomador{% if tomadores.total != 1 %}es{% endif %}.
+      </div>
+
+      {% if tomadores.pages > 1 %}
+        <nav aria-label="Paginação de tomadores">
+          <ul class="pagination pagination-sm mb-0">
+            <li class="page-item {% if not tomadores.has_prev %}disabled{% endif %}">
+              <a class="page-link" href="{% if tomadores.has_prev %}{{ url_for('listar_tomadores', page=tomadores.prev_num, **filtros_url) }}{% else %}#{% endif %}">Anterior</a>
+            </li>
+
+            {% for pagina in tomadores.iter_pages(left_edge=1, left_current=2, right_current=2, right_edge=1) %}
+              {% if pagina %}
+                <li class="page-item {% if pagina == tomadores.page %}active{% endif %}">
+                  <a class="page-link" href="{{ url_for('listar_tomadores', page=pagina, **filtros_url) }}">{{ pagina }}</a>
+                </li>
+              {% else %}
+                <li class="page-item disabled"><span class="page-link">…</span></li>
+              {% endif %}
+            {% endfor %}
+
+            <li class="page-item {% if not tomadores.has_next %}disabled{% endif %}">
+              <a class="page-link" href="{% if tomadores.has_next %}{{ url_for('listar_tomadores', page=tomadores.next_num, **filtros_url) }}{% else %}#{% endif %}">Próxima</a>
+            </li>
+          </ul>
+        </nav>
+      {% endif %}
+    </div>
+  {% endif %}
 </div>
 {% endblock %}

@@ -1,4 +1,4 @@
-const CACHE_NAME = "fluxar-emissoes-static-v1";
+const CACHE_NAME = "fluxar-emissoes-static-v2";
 
 const STATIC_ASSETS = [
   "/static/bootstrap/css/bootstrap.min.css",
@@ -11,7 +11,8 @@ const STATIC_ASSETS = [
   "/static/icon-192x192.png",
   "/static/icon-512x512.png",
   "/static/icon-512x512-maskable.png",
-  "/static/apple-touch-icon.png"
+  "/static/apple-touch-icon.png",
+  "/static/user.png"
 ];
 
 self.addEventListener("install", (event) => {

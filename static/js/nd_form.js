@@ -14,15 +14,24 @@
   const resumoEndereco = document.getElementById("tomadorResumoEndereco");
   const resumoTelefone = document.getElementById("tomadorResumoTelefone");
   const resumoEmail = document.getElementById("tomadorResumoEmail");
+  const btnEditarTomadorSelecionado = document.getElementById("btnEditarTomadorSelecionado");
   const modalTomadorElemento = document.getElementById("modalBuscarTomador");
   const campoBuscaTomador = document.getElementById("buscaTomador");
   const resultadosTomadores = document.getElementById("resultadosTomadores");
   const tomadorSelecionadoElemento = document.getElementById("tomadorSelecionadoData");
+  const tiposDocumentoElemento = document.getElementById("tiposDocumentoData");
   const configNotaElemento = document.getElementById("configNotaData");
+  const campoTipoDocumento = document.getElementById("tipo_documento_id");
+  const tipoDocumentoNome = document.getElementById("tipoDocumentoNome");
+  const tipoDocumentoNumero = document.getElementById("tipoDocumentoNumero");
+  const campoObservacoes = document.getElementById("observacoes");
 
   const configNota = configNotaElemento
     ? JSON.parse(configNotaElemento.textContent || "{}")
     : {};
+  const tiposDocumento = tiposDocumentoElemento
+    ? JSON.parse(tiposDocumentoElemento.textContent || "[]")
+    : [];
 
   let tomadorSelecionado = tomadorSelecionadoElemento
     ? JSON.parse(tomadorSelecionadoElemento.textContent || "null")
@@ -30,6 +39,37 @@
   let referenciaAutomatica = campoReferencia ? campoReferencia.value : "";
   let temporizadorBuscaTomador = null;
   let requisicaoBuscaTomador = null;
+
+  function atualizarTipoDocumento(atualizarObservacao) {
+    if (!campoTipoDocumento) {
+      return;
+    }
+
+    const tipoId = Number.parseInt(campoTipoDocumento.value || "0", 10);
+    const tipo = tiposDocumento.find(function (item) {
+      return Number(item.id) === tipoId;
+    });
+
+    if (!tipo) {
+      if (tipoDocumentoNome) {
+        tipoDocumentoNome.textContent = "Nenhum tipo selecionado";
+      }
+      if (tipoDocumentoNumero) {
+        tipoDocumentoNumero.textContent = "—";
+      }
+      return;
+    }
+
+    if (tipoDocumentoNome) {
+      tipoDocumentoNome.textContent = tipo.nome || "Documento";
+    }
+    if (tipoDocumentoNumero) {
+      tipoDocumentoNumero.textContent = tipo.numero_formatado || "—";
+    }
+    if (atualizarObservacao && campoObservacoes) {
+      campoObservacoes.value = tipo.observacao_padrao || "";
+    }
+  }
 
   function moedaParaNumero(valor) {
     const texto = String(valor || "0")
@@ -270,8 +310,39 @@
     }
   }
 
+  function montarUrlComTomador(urlBase, tomadorId) {
+    if (!urlBase || !tomadorId) {
+      return "#";
+    }
+
+    return urlBase.replace(/\/0(?=\/|$)/, `/${tomadorId}`);
+  }
+
+  function atualizarBotaoEditarTomador() {
+    if (!btnEditarTomadorSelecionado) {
+      return;
+    }
+
+    if (!tomadorSelecionado || !tomadorSelecionado.id) {
+      btnEditarTomadorSelecionado.href = "#";
+      btnEditarTomadorSelecionado.classList.add("disabled");
+      btnEditarTomadorSelecionado.setAttribute("aria-disabled", "true");
+      btnEditarTomadorSelecionado.setAttribute("tabindex", "-1");
+      return;
+    }
+
+    btnEditarTomadorSelecionado.href = montarUrlComTomador(
+      configNota.url_editar_tomador_base,
+      tomadorSelecionado.id
+    );
+    btnEditarTomadorSelecionado.classList.remove("disabled");
+    btnEditarTomadorSelecionado.removeAttribute("aria-disabled");
+    btnEditarTomadorSelecionado.removeAttribute("tabindex");
+  }
+
   function atualizarResumoTomador(tomador) {
     tomadorSelecionado = tomador || null;
+    atualizarBotaoEditarTomador();
 
     if (!tomadorSelecionado) {
       campoTomadorId.value = "";
@@ -287,6 +358,34 @@
     resumoTelefone.textContent = tomadorSelecionado.telefone || "-";
     resumoEmail.textContent = tomadorSelecionado.email || "-";
     resumoTomador.classList.remove("d-none");
+  }
+
+  async function recarregarTomadorSelecionado() {
+    if (!tomadorSelecionado || !tomadorSelecionado.id || !configNota.url_tomador_detalhe_base) {
+      return;
+    }
+
+    const tomadorId = tomadorSelecionado.id;
+    const url = montarUrlComTomador(configNota.url_tomador_detalhe_base, tomadorId);
+
+    try {
+      const resposta = await fetch(url, {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+
+      if (!resposta.ok) {
+        return;
+      }
+
+      const tomador = await resposta.json();
+
+      if (Number(tomador.id) === Number(tomadorId)) {
+        atualizarResumoTomador(tomador);
+      }
+    } catch (erro) {
+      // A atualização automática é apenas uma conveniência.
+    }
   }
 
   function criarCelula(texto, classe) {
@@ -421,6 +520,12 @@
     });
   }
 
+  if (campoTipoDocumento) {
+    campoTipoDocumento.addEventListener("change", function () {
+      atualizarTipoDocumento(true);
+    });
+  }
+
   if (modalTomadorElemento) {
     modalTomadorElemento.addEventListener("shown.bs.modal", function () {
       campoBuscaTomador.focus();
@@ -437,8 +542,18 @@
     });
   }
 
+  window.addEventListener("focus", function () {
+    recarregarTomadorSelecionado();
+  });
+
   if (formulario) {
     formulario.addEventListener("submit", function (event) {
+      if (campoTipoDocumento && !campoTipoDocumento.value) {
+        event.preventDefault();
+        campoTipoDocumento.focus();
+        return;
+      }
+
       if (!campoTomadorId.value) {
         event.preventDefault();
         bootstrap.Modal.getOrCreateInstance(modalTomadorElemento).show();
@@ -447,6 +562,7 @@
   }
 
   inicializarMascarasMoeda(document);
+  atualizarTipoDocumento(false);
   atualizarResumoTomador(tomadorSelecionado);
   atualizarTotais();
 })();

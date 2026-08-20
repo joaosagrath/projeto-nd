@@ -6,17 +6,82 @@
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
   <div>
     <h1 class="h3 mb-1">Documentos</h1>
-    <p class="text-body-secondary mb-0">
-      Tipo atual: <strong>{{ empresa.documento_nome_exibicao if empresa else 'NOTA DE DÉBITO' }}</strong>. Consulte os documentos gerados e baixe os PDFs.
-    </p>
+    <p class="text-body-secondary mb-0">Consulte os documentos gerados, filtre por tipo e acompanhe as emissões.</p>
   </div>
   <a class="btn btn-primary" href="{{ url_for('nova_nota') }}">Novo documento</a>
 </div>
 
-<div class="card shadow-sm border-0">
+<div class="card shadow-sm border-0 mb-4">
+  <div class="card-body">
+    <form method="get" action="{{ url_for('index') }}">
+      <div class="row g-3">
+        <div class="col-12 col-md-2">
+          <label class="form-label" for="filtroDocumento">Documento</label>
+          <input class="form-control" type="text" id="filtroDocumento" name="documento" value="{{ request.args.get('documento', '') }}" placeholder="Ex. Nota de Débito">
+        </div>
+
+        <div class="col-12 col-md-2">
+          <label class="form-label" for="filtroNumero">Número</label>
+          <input class="form-control" type="text" id="filtroNumero" name="numero" value="{{ request.args.get('numero', '') }}" placeholder="Ex.: ND00034">
+        </div>
+
+        <div class="col-12 col-md-4">
+          <label class="form-label" for="filtroTomador">Tomador</label>
+          <input class="form-control" type="text" id="filtroTomador" name="tomador" value="{{ request.args.get('tomador', '') }}" placeholder="Nome ou razão social">
+        </div>
+
+        <div class="col-12 col-md-2">
+          <label class="form-label" for="filtroEmissaoDe">Emissão entre</label>
+          <input class="form-control" type="date" id="filtroEmissaoDe" name="emissao_de" value="{{ request.args.get('emissao_de', '') }}">
+        </div>
+
+        <div class="col-12 col-md-2">
+          <div class="form-label d-none d-md-block" aria-hidden="true">&nbsp;</div>
+          <input class="form-control" type="date" id="filtroEmissaoAte" name="emissao_ate" value="{{ request.args.get('emissao_ate', '') }}" aria-label="Emissão até">
+        </div>
+
+        <div class="col-12 col-md-2">
+          <label class="form-label" for="filtroVencimentoDe">Vencimento entre</label>
+          <input class="form-control" type="date" id="filtroVencimentoDe" name="vencimento_de" value="{{ request.args.get('vencimento_de', '') }}">
+        </div>
+
+        <div class="col-12 col-md-2">
+          <div class="form-label d-none d-md-block" aria-hidden="true">&nbsp;</div>
+          <input class="form-control" type="date" id="filtroVencimentoAte" name="vencimento_ate" value="{{ request.args.get('vencimento_ate', '') }}" aria-label="Vencimento até">
+        </div>
+
+        <div class="col-12 col-md-2">
+          <label class="form-label" for="filtroValorDe">Valor entre</label>
+          <input class="form-control" type="text" inputmode="decimal" id="filtroValorDe" name="valor_de" value="{{ request.args.get('valor_de', '') }}" placeholder="0,00">
+        </div>
+
+        <div class="col-12 col-md-2">
+          <div class="form-label d-none d-md-block" aria-hidden="true">&nbsp;</div>
+          <input class="form-control" type="text" inputmode="decimal" id="filtroValorAte" name="valor_ate" value="{{ request.args.get('valor_ate', '') }}" placeholder="0,00" aria-label="Valor até">
+        </div>
+
+        <div class="col-12 col-md-2">
+          <label class="form-label" for="filtroPorPagina">Itens</label>
+          <select class="form-select" id="filtroPorPagina" name="per_page">
+            {% for quantidade in [10, 20, 30] %}
+              <option value="{{ quantidade }}" {% if request.args.get('per_page', '10')|int == quantidade %}selected{% endif %}>{{ quantidade }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-12 col-md-2 d-flex align-items-end gap-2">
+          <a class="btn btn-outline-secondary w-100" href="{{ url_for('index') }}">Limpar</a>
+          <button class="btn btn-primary w-100" type="submit">Filtrar</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card shadow-sm border-0 listagem-responsive">
   <div class="card-body p-0">
     <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0">
+      <table class="table table-hover align-middle mb-0 responsive-card-table">
         <thead class="table-light">
           <tr>
             <th>Documento</th>
@@ -29,27 +94,27 @@
           </tr>
         </thead>
         <tbody>
-          {% for nota in notas %}
+          {% for nota in notas.items %}
             <tr>
-              <td>{{ nota.documento_nome_exibicao }}</td>
-              <td class="fw-semibold">{{ nota.numero_formatado }}</td>
-              <td>{{ nota.tomador_nome_exibicao }}</td>
-              <td>{{ nota.emissao|data_br }}</td>
-              <td>{{ nota.vencimento|data_br }}</td>
-              <td class="text-end">{{ nota.valor_pagar|brl }}</td>
-              <td class="text-end">
+              <td data-label="Documento">{{ nota.documento_nome_exibicao }}</td>
+              <td class="fw-semibold" data-label="Número">{{ nota.numero_formatado }}</td>
+              <td data-label="Tomador">{{ nota.tomador_nome_exibicao }}</td>
+              <td data-label="Emissão">{{ nota.emissao|data_br }}</td>
+              <td data-label="Vencimento">{{ nota.vencimento|data_br }}</td>
+              <td class="text-end" data-label="Valor">{{ nota.valor_pagar|brl }}</td>
+              <td class="text-end text-nowrap responsive-actions" data-label="Ações">
                 <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('visualizar_nota', nota_id=nota.id) }}">Visualizar</a>
                 <a class="btn btn-sm btn-outline-warning" href="{{ url_for('editar_nota', nota_id=nota.id) }}">Editar</a>
                 <a class="btn btn-sm btn-outline-primary" href="{{ url_for('baixar_pdf', nota_id=nota.id) }}">PDF</a>
-                {% if nota.tomador and nota.tomador.telefone %}
+                {% if not config.get('MODO_EXECUTAVEL') and nota.tomador and nota.tomador.telefone %}
                   <a class="btn btn-sm btn-outline-success" href="{{ url_for('enviar_whatsapp', nota_id=nota.id) }}" target="_blank" rel="noopener">WhatsApp</a>
                 {% endif %}
               </td>
             </tr>
           {% else %}
-            <tr>
+            <tr class="responsive-empty-row">
               <td colspan="7" class="text-center text-body-secondary py-5">
-                Nenhum documento foi criado ainda.
+                Nenhum documento encontrado.
               </td>
             </tr>
           {% endfor %}
@@ -57,5 +122,37 @@
       </table>
     </div>
   </div>
+
+  {% if notas.total > 0 %}
+    <div class="card-footer bg-body d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+      <div class="small text-body-secondary">
+        Exibindo {{ ((notas.page - 1) * notas.per_page) + 1 }}–{{ [notas.page * notas.per_page, notas.total]|min }} de {{ notas.total }} documento{% if notas.total != 1 %}s{% endif %}.
+      </div>
+
+      {% if notas.pages > 1 %}
+        <nav aria-label="Paginação de documentos">
+          <ul class="pagination pagination-sm mb-0">
+            <li class="page-item {% if not notas.has_prev %}disabled{% endif %}">
+              <a class="page-link" href="{% if notas.has_prev %}{{ url_for('index', page=notas.prev_num, **filtros_url) }}{% else %}#{% endif %}">Anterior</a>
+            </li>
+
+            {% for pagina in notas.iter_pages(left_edge=1, left_current=2, right_current=2, right_edge=1) %}
+              {% if pagina %}
+                <li class="page-item {% if pagina == notas.page %}active{% endif %}">
+                  <a class="page-link" href="{{ url_for('index', page=pagina, **filtros_url) }}">{{ pagina }}</a>
+                </li>
+              {% else %}
+                <li class="page-item disabled"><span class="page-link">…</span></li>
+              {% endif %}
+            {% endfor %}
+
+            <li class="page-item {% if not notas.has_next %}disabled{% endif %}">
+              <a class="page-link" href="{% if notas.has_next %}{{ url_for('index', page=notas.next_num, **filtros_url) }}{% else %}#{% endif %}">Próxima</a>
+            </li>
+          </ul>
+        </nav>
+      {% endif %}
+    </div>
+  {% endif %}
 </div>
 {% endblock %}

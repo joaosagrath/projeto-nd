@@ -6,49 +6,64 @@
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
   <div>
     <h1 class="h3 mb-1">Configurações</h1>
-    <p class="text-body-secondary mb-0">Dados do emitente, identificação do documento e logotipo.</p>
+    <p class="text-body-secondary mb-0">Dados do emitente, tipos de documento e logotipo.</p>
   </div>
   <a class="btn btn-outline-secondary" href="{{ url_for('index') }}">Voltar</a>
 </div>
 
-<form method="post" enctype="multipart/form-data">
-  <input type="hidden" name="acao" value="empresa">
-  <div class="card shadow-sm border-0 mb-4">
-    <div class="card-header fw-semibold">Documento</div>
-    <div class="card-body">
-      <div class="row g-3">
-        <div class="col-md-8">
-          <label class="form-label" for="documento_nome">Nome do documento</label>
-          <input
-            class="form-control"
-            id="documento_nome"
-            name="documento_nome"
-            maxlength="120"
-            value="{{ request.form.get('documento_nome', empresa.documento_nome_exibicao) }}"
-            placeholder="NOTA DE DÉBITO"
-            required
-          >
-          <div class="form-text">É o título exibido no cabeçalho do documento e no PDF.</div>
-        </div>
-        <div class="col-md-4">
-          <label class="form-label" for="documento_prefixo">Prefixo da numeração</label>
-          <input
-            class="form-control"
-            id="documento_prefixo"
-            name="documento_prefixo"
-            maxlength="20"
-            value="{{ request.form.get('documento_prefixo', empresa.documento_prefixo_exibicao) }}"
-            placeholder="ND"
-          >
-          <div class="form-text">Ex.: <strong>ND</strong> → ND00001. Deixe vazio para gerar apenas 00001.</div>
-        </div>
-      </div>
-      <div class="alert alert-light border mt-3 mb-0 small">
-        Documentos já emitidos mantêm o nome e o prefixo gravados. Ao editar e salvar um documento antigo, ele passa a usar o nome e o prefixo configurados atualmente.
-      </div>
+<div class="card shadow-sm border-0 mb-4">
+  <div class="card-header d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+    <div>
+      <div class="fw-semibold">Tipos de documento</div>
+      <div class="small text-body-secondary">Cada tipo possui nome, prefixo, observação padrão e numeração própria.</div>
+    </div>
+    <a class="btn btn-sm btn-primary" href="{{ url_for('novo_tipo_documento') }}">Novo tipo</a>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table align-middle mb-0 responsive-card-table">
+        <thead class="table-light">
+          <tr>
+            <th>Nome</th>
+            <th>Prefixo</th>
+            <th>Próximo número</th>
+            <th>Situação</th>
+            <th class="text-end">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for tipo in tipos_documento %}
+            <tr>
+              <td class="fw-semibold" data-label="Nome">{{ tipo.nome }}</td>
+              <td data-label="Prefixo">{{ tipo.prefixo_exibicao or 'Sem prefixo' }}</td>
+              <td data-label="Próximo número">{{ tipo.proximo_numero_formatado }}</td>
+              <td data-label="Situação">
+                {% if tipo.ativo %}
+                  <span class="badge text-bg-success">Ativo</span>
+                {% else %}
+                  <span class="badge text-bg-secondary">Inativo</span>
+                {% endif %}
+              </td>
+              <td class="text-end text-nowrap responsive-actions" data-label="Ações">
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('editar_tipo_documento', tipo_id=tipo.id) }}">Editar</a>
+                <form method="post" action="{{ url_for('excluir_tipo_documento', tipo_id=tipo.id) }}" class="d-inline" onsubmit="return confirm('Excluir este tipo de documento?');">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Excluir</button>
+                </form>
+              </td>
+            </tr>
+          {% else %}
+            <tr class="responsive-empty-row">
+              <td colspan="5" class="text-center text-body-secondary py-4">Nenhum tipo de documento cadastrado.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   </div>
+</div>
 
+<form method="post" enctype="multipart/form-data">
+  <input type="hidden" name="acao" value="empresa">
   <div class="card shadow-sm border-0 mb-4">
     <div class="card-header fw-semibold">Identificação e logotipo</div>
     <div class="card-body">
@@ -145,9 +160,10 @@
   </div>
 </form>
 
+{% if not config.get('MODO_EXECUTAVEL') %}
 <hr class="my-5">
 
-<div class="mb-3">
+<div class="mb-3" id="acesso-sistema">
   <h2 class="h4 mb-1">Acesso ao sistema</h2>
   <p class="text-body-secondary mb-0">Altere o login, o e-mail de recuperação e a senha usados no Fluxar Emissões.</p>
 </div>
@@ -236,4 +252,5 @@
     <button class="btn btn-outline-primary" type="submit">Atualizar acesso</button>
   </div>
 </form>
+{% endif %}
 {% endblock %}

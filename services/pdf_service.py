@@ -197,6 +197,7 @@ def criar_cabecalho(nota, empresa, estilos, logo_bytes, logo_mimetype):
 
     referencia = escape(str(nota.referencia or "-"))
     condicao = escape(str(nota.condicao or "-"))
+    vencimento = nota.vencimento.strftime("%d/%m/%Y") if nota.vencimento else ""
 
     quadro_direito = [
         Paragraph(escape(nota.documento_nome_exibicao), estilos["titulo"]),
@@ -204,9 +205,16 @@ def criar_cabecalho(nota, empresa, estilos, logo_bytes, logo_mimetype):
         Spacer(1, 3 * mm),
         Paragraph(f"<b>Emissão:</b> {nota.emissao.strftime('%d/%m/%Y')}", estilos["centro"]),
         Paragraph(f"<b>Referência:</b> {referencia}", estilos["centro"]),
-        Paragraph(f"<b>Vencimento:</b> {nota.vencimento.strftime('%d/%m/%Y')}", estilos["centro"]),
-        Paragraph(f"<b>Condição:</b> {condicao}", estilos["centro"]),
     ]
+
+    if nota.vencimento:
+        quadro_direito.append(
+            Paragraph(f"<b>Vencimento:</b> {vencimento}", estilos["centro"])
+        )
+
+    quadro_direito.append(
+        Paragraph(f"<b>Condição:</b> {condicao}", estilos["centro"])
+    )
 
     tabela = Table(
         [[bloco_emitente, quadro_direito]],

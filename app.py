@@ -32,9 +32,9 @@ from flask import (
     session,
     url_for,
 )
-from sqlalchemy import func, inspect, or_, text
+from sqlalchemy import func, inspect, or_, text, update
 
-from models import Empresa, NotaDebito, NotaDebitoItem, Tomador, Usuario, db
+from models import Empresa, NotaDebito, NotaDebitoItem, TipoDocumento, Tomador, Usuario, db
 from services.pdf_service import gerar_pdf_nota
 from werkzeug.security import check_password_hash, generate_password_hash
 from dotenv import load_dotenv
@@ -85,8 +85,8 @@ def criar_app():
         db.create_all()
         aplicar_migracoes_simples()
         garantir_empresa_padrao()
+        garantir_tipo_documento_padrao()
         garantir_usuario_padrao()
-        preencher_snapshots_legados()
 
     return app
 
@@ -134,6 +134,7 @@ def obter_secret_key():
         pass
     return chave
 
+
 def registrar_pwa(app):
     @app.route("/service-worker.js")
     def service_worker():
@@ -145,9 +146,14 @@ def registrar_pwa(app):
         resposta.headers["Cache-Control"] = "no-cache"
         return resposta
 
+
 def registrar_autenticacao(app):
     @app.before_request
     def proteger_aplicacao():
+        if app.config.get("MODO_EXECUTAVEL"):
+            g.usuario = Usuario.query.first()
+            return None
+
         endpoints_publicos = {
             "login",
             "esqueci_senha",
@@ -156,18 +162,15 @@ def registrar_autenticacao(app):
             "service_worker",
             "static",
         }
-
         if request.endpoint in endpoints_publicos:
             return None
 
         usuario_id = session.get("usuario_id")
-
         if not usuario_id:
             destino = request.full_path if request.query_string else request.path
             return redirect(url_for("login", next=destino))
 
         usuario = db.session.get(Usuario, usuario_id)
-
         if usuario is None:
             session.clear()
             return redirect(url_for("login"))
@@ -186,6 +189,9 @@ def destino_login_seguro(valor):
 def registrar_rotas(app):
     @app.route("/login", methods=["GET", "POST"])
     def login():
+        if app.config.get("MODO_EXECUTAVEL"):
+            return redirect(url_for("index"))
+
         if session.get("usuario_id"):
             return redirect(url_for("index"))
 
@@ -215,6 +221,9 @@ def registrar_rotas(app):
 
     @app.route("/logout")
     def logout():
+        if app.config.get("MODO_EXECUTAVEL"):
+            return redirect(url_for("index"))
+
         session.clear()
         flash("Sessão encerrada.", "success")
         return redirect(url_for("login"))
@@ -229,6 +238,9 @@ def registrar_rotas(app):
 
     @app.route("/esqueci-senha", methods=["GET", "POST"])
     def esqueci_senha():
+        if app.config.get("MODO_EXECUTAVEL"):
+            return redirect(url_for("index"))
+
         if session.get("usuario_id"):
             return redirect(url_for("index"))
 
@@ -289,6 +301,9 @@ def registrar_rotas(app):
 
     @app.route("/redefinir-senha/<token>", methods=["GET", "POST"])
     def redefinir_senha(token):
+        if app.config.get("MODO_EXECUTAVEL"):
+            return redirect(url_for("index"))
+
         usuario = localizar_usuario_por_token(token)
         if usuario is None:
             flash("Este link de recuperação é inválido ou expirou.", "danger")
@@ -315,19 +330,115 @@ def registrar_rotas(app):
 
     @app.route("/")
     def index():
-        notas = NotaDebito.query.order_by(NotaDebito.numero_sequencial.desc()).all()
-        empresa = Empresa.query.first()
-        return render_template("index.html", notas=notas, empresa=empresa)
+        documento = request.args.get("documento", "").strip()
+        numero = request.args.get("numero", "").strip()
+        tomador = request.args.get("tomador", "").strip()
+        emissao_de = request.args.get("emissao_de", "").strip()
+        emissao_ate = request.args.get("emissao_ate", "").strip()
+        vencimento_de = request.args.get("vencimento_de", "").strip()
+        vencimento_ate = request.args.get("vencimento_ate", "").strip()
+        valor_de = request.args.get("valor_de", "").strip()
+        valor_ate = request.args.get("valor_ate", "").strip()
+
+        try:
+            pagina = max(int(request.args.get("page", 1)), 1)
+        except (TypeError, ValueError):
+            pagina = 1
+
+        try:
+            por_pagina = int(request.args.get("per_page", 10))
+        except (TypeError, ValueError):
+            por_pagina = 10
+
+        if por_pagina not in {10, 20, 30}:
+            por_pagina = 10
+
+        consulta = NotaDebito.query
+
+        if documento:
+            consulta = consulta.filter(
+                func.coalesce(NotaDebito.documento_nome, "DOCUMENTO").ilike(
+                    f"%{documento}%"
+                )
+            )
+
+        if numero:
+            numero_compacto = re.sub(r"\s+", "", numero).upper()
+            correspondencia = re.search(r"(\d+)$", numero_compacto)
+
+            if correspondencia:
+                numero_sequencial = int(correspondencia.group(1))
+                prefixo = numero_compacto[: correspondencia.start()]
+                consulta = consulta.filter(
+                    NotaDebito.numero_sequencial == numero_sequencial
+                )
+
+                if prefixo:
+                    consulta = consulta.filter(
+                        func.coalesce(NotaDebito.documento_prefixo, "").ilike(prefixo)
+                    )
+            else:
+                consulta = consulta.filter(NotaDebito.id == -1)
+
+        if tomador:
+            termo_tomador = f"%{tomador}%"
+            consulta = consulta.join(
+                Tomador, NotaDebito.tomador_id == Tomador.id
+            ).filter(
+                or_(
+                    NotaDebito.tomador_nome.ilike(termo_tomador),
+                    Tomador.nome.ilike(termo_tomador),
+                )
+            )
+
+        data_emissao_de = converter_data_filtro(emissao_de)
+        data_emissao_ate = converter_data_filtro(emissao_ate)
+        data_vencimento_de = converter_data_filtro(vencimento_de)
+        data_vencimento_ate = converter_data_filtro(vencimento_ate)
+        valor_minimo = converter_decimal_filtro(valor_de)
+        valor_maximo = converter_decimal_filtro(valor_ate)
+
+        if data_emissao_de:
+            consulta = consulta.filter(NotaDebito.emissao >= data_emissao_de)
+        if data_emissao_ate:
+            consulta = consulta.filter(NotaDebito.emissao <= data_emissao_ate)
+        if data_vencimento_de:
+            consulta = consulta.filter(NotaDebito.vencimento >= data_vencimento_de)
+        if data_vencimento_ate:
+            consulta = consulta.filter(NotaDebito.vencimento <= data_vencimento_ate)
+        if valor_minimo is not None:
+            consulta = consulta.filter(NotaDebito.valor_pagar >= valor_minimo)
+        if valor_maximo is not None:
+            consulta = consulta.filter(NotaDebito.valor_pagar <= valor_maximo)
+
+        consulta = consulta.order_by(NotaDebito.emissao.desc(), NotaDebito.id.desc())
+        notas = consulta.paginate(
+            page=pagina,
+            per_page=por_pagina,
+            error_out=False,
+        )
+
+        filtros_url = request.args.to_dict()
+        filtros_url.pop("page", None)
+
+        return render_template(
+            "index.html",
+            notas=notas,
+            filtros_url=filtros_url,
+        )
 
     @app.route("/configuracoes", methods=["GET", "POST"])
     def configuracoes():
         empresa = Empresa.query.first()
-        usuario = g.usuario
+        usuario = getattr(g, "usuario", None)
 
         if request.method == "POST":
             acao = request.form.get("acao", "empresa")
 
             if acao == "credenciais":
+                if app.config.get("MODO_EXECUTAVEL"):
+                    abort(404)
+
                 try:
                     atualizar_credenciais_usuario(usuario, request.form)
                     db.session.commit()
@@ -351,13 +462,6 @@ def registrar_rotas(app):
                     empresa.cep = normalizar_cep(request.form.get("cep")) or None
                     empresa.telefone = normalizar_telefone(request.form.get("telefone")) or None
                     empresa.email = request.form.get("email", "").strip() or None
-                    empresa.documento_nome = validar_nome_documento(
-                        request.form.get("documento_nome")
-                    )
-                    empresa.documento_prefixo = validar_prefixo_documento(
-                        request.form.get("documento_prefixo")
-                    )
-
                     empresa.endereco = empresa.endereco_formatado or None
 
                     if request.form.get("remover_logo") == "1":
@@ -374,10 +478,16 @@ def registrar_rotas(app):
                     db.session.rollback()
                     flash(str(exc), "danger")
 
+        tipos_documento = TipoDocumento.query.order_by(
+            TipoDocumento.ativo.desc(),
+            TipoDocumento.nome.asc(),
+        ).all()
+
         return render_template(
             "configuracoes.html",
             empresa=empresa,
             usuario=usuario,
+            tipos_documento=tipos_documento,
             servico_email_ativo=servico_email_configurado(),
         )
 
@@ -393,10 +503,152 @@ def registrar_rotas(app):
 
         return send_from_directory(UPLOAD_DIR, empresa.logo_arquivo)
 
+    @app.route("/configuracoes/tipos-documento/novo", methods=["GET", "POST"])
+    def novo_tipo_documento():
+        tipo = TipoDocumento(
+            nome="",
+            prefixo="",
+            proximo_numero=1,
+            observacao_padrao=None,
+            ativo=True,
+        )
+
+        if request.method == "POST":
+            try:
+                preencher_tipo_documento(tipo, request.form)
+                validar_tipo_documento_unico(tipo)
+                db.session.add(tipo)
+                db.session.commit()
+                flash("Tipo de documento cadastrado com sucesso.", "success")
+                return redirect(url_for("configuracoes"))
+            except ValueError as exc:
+                db.session.rollback()
+                flash(str(exc), "danger")
+
+        return render_template(
+            "tipo_documento_form.html",
+            tipo=tipo,
+            titulo="Novo tipo de documento",
+            modo_edicao=False,
+        )
+
+    @app.route(
+        "/configuracoes/tipos-documento/<int:tipo_id>/editar",
+        methods=["GET", "POST"],
+    )
+    def editar_tipo_documento(tipo_id):
+        tipo = TipoDocumento.query.get_or_404(tipo_id)
+
+        if request.method == "POST":
+            try:
+                preencher_tipo_documento(tipo, request.form)
+                validar_tipo_documento_unico(tipo)
+                validar_proximo_numero_tipo(tipo)
+                db.session.commit()
+                flash("Tipo de documento atualizado com sucesso.", "success")
+                return redirect(url_for("configuracoes"))
+            except ValueError as exc:
+                db.session.rollback()
+                flash(str(exc), "danger")
+
+        return render_template(
+            "tipo_documento_form.html",
+            tipo=tipo,
+            titulo="Editar tipo de documento",
+            modo_edicao=True,
+        )
+
+    @app.route(
+        "/configuracoes/tipos-documento/<int:tipo_id>/excluir",
+        methods=["POST"],
+    )
+    def excluir_tipo_documento(tipo_id):
+        tipo = TipoDocumento.query.get_or_404(tipo_id)
+
+        if NotaDebito.query.filter_by(tipo_documento_id=tipo.id).first():
+            flash(
+                "Este tipo já possui documentos emitidos. Desative-o em vez de excluir.",
+                "warning",
+            )
+            return redirect(url_for("configuracoes"))
+
+        db.session.delete(tipo)
+        db.session.commit()
+        flash("Tipo de documento excluído.", "success")
+        return redirect(url_for("configuracoes"))
+
     @app.route("/tomadores")
     def listar_tomadores():
-        tomadores = Tomador.query.order_by(Tomador.nome.asc()).all()
-        return render_template("tomadores.html", tomadores=tomadores)
+        nome = request.args.get("nome", "").strip()
+        documento = request.args.get("documento", "").strip()
+        localidade = request.args.get("localidade", "").strip()
+        telefone = request.args.get("telefone", "").strip()
+
+        try:
+            pagina = max(int(request.args.get("page", 1)), 1)
+        except (TypeError, ValueError):
+            pagina = 1
+
+        try:
+            por_pagina = int(request.args.get("per_page", 10))
+        except (TypeError, ValueError):
+            por_pagina = 10
+
+        if por_pagina not in {10, 20, 30}:
+            por_pagina = 10
+
+        consulta = Tomador.query
+
+        if nome:
+            consulta = consulta.filter(Tomador.nome.ilike(f"%{nome}%"))
+
+        if documento:
+            documento_normalizado = re.sub(r"\D", "", documento)
+            termo_documento = documento_normalizado or documento
+            consulta = consulta.filter(Tomador.documento.ilike(f"%{termo_documento}%"))
+
+        if localidade:
+            termo_localidade = f"%{localidade}%"
+            consulta = consulta.filter(
+                or_(
+                    Tomador.cidade.ilike(termo_localidade),
+                    Tomador.uf.ilike(termo_localidade),
+                    Tomador.bairro.ilike(termo_localidade),
+                )
+            )
+
+        if telefone:
+            telefone_normalizado = normalizar_telefone(telefone)
+            termo_telefone = telefone_normalizado or telefone
+            consulta = consulta.filter(Tomador.telefone.ilike(f"%{termo_telefone}%"))
+
+        consulta = consulta.order_by(Tomador.nome.asc())
+        tomadores = consulta.paginate(
+            page=pagina,
+            per_page=por_pagina,
+            error_out=False,
+        )
+
+        ids_tomadores = [tomador.id for tomador in tomadores.items]
+        contagens_documentos = {}
+
+        if ids_tomadores:
+            contagens_documentos = dict(
+                db.session.query(NotaDebito.tomador_id, func.count(NotaDebito.id))
+                .filter(NotaDebito.tomador_id.in_(ids_tomadores))
+                .group_by(NotaDebito.tomador_id)
+                .all()
+            )
+
+        filtros_url = request.args.to_dict()
+        filtros_url.pop("page", None)
+
+        return render_template(
+            "tomadores.html",
+            tomadores=tomadores,
+            contagens_documentos=contagens_documentos,
+            filtros_url=filtros_url,
+        )
 
     @app.route("/tomadores/novo", methods=["GET", "POST"])
     def novo_tomador():
@@ -527,6 +779,11 @@ def registrar_rotas(app):
         tomadores = consulta.order_by(Tomador.nome.asc()).limit(50).all()
         return jsonify(montar_tomadores_json(tomadores))
 
+    @app.route("/api/tomadores/<int:tomador_id>")
+    def api_obter_tomador(tomador_id):
+        tomador = Tomador.query.get_or_404(tomador_id)
+        return jsonify(montar_tomador_json(tomador))
+
     @app.route("/notas/nova", methods=["GET", "POST"])
     def nova_nota():
         if request.method == "POST":
@@ -568,11 +825,17 @@ def registrar_rotas(app):
         nota = NotaDebito.query.get_or_404(nota_id)
         empresa = Empresa.query.first()
         tem_logo = nota_tem_logo(nota, empresa)
+        destinatarios_padrao = nota.tomador.email if nota.tomador and nota.tomador.email else ""
+
         return render_template(
             "nd_visualizar.html",
             nota=nota,
             empresa=empresa,
             tem_logo=tem_logo,
+            servico_email_ativo=servico_email_configurado(),
+            email_documento_destinatarios=destinatarios_padrao,
+            email_documento_assunto=montar_assunto_email_documento(nota, empresa),
+            email_documento_corpo=montar_corpo_email_documento(nota, empresa),
         )
 
     @app.route("/notas/<int:nota_id>/logo")
@@ -620,6 +883,9 @@ def registrar_rotas(app):
 
     @app.route("/notas/<int:nota_id>/whatsapp")
     def enviar_whatsapp(nota_id):
+        if app.config.get("MODO_EXECUTAVEL"):
+            abort(404)
+
         nota = NotaDebito.query.get_or_404(nota_id)
         telefone = preparar_telefone_whatsapp(nota.tomador.telefone if nota.tomador else None)
         if not telefone:
@@ -634,6 +900,49 @@ def registrar_rotas(app):
         )
         return redirect(f"https://wa.me/{telefone}?text={quote(mensagem, safe='')}")
 
+    @app.route("/notas/<int:nota_id>/email", methods=["POST"])
+    def enviar_documento_email(nota_id):
+        if app.config.get("MODO_EXECUTAVEL"):
+            abort(404)
+
+        nota = NotaDebito.query.get_or_404(nota_id)
+
+        if not servico_email_configurado():
+            flash("O serviço de e-mail não está configurado neste servidor.", "warning")
+            return redirect(url_for("visualizar_nota", nota_id=nota.id))
+
+        try:
+            destinatarios = separar_destinatarios_email(request.form.get("destinatarios"))
+            assunto = request.form.get("assunto", "").strip()
+            corpo = request.form.get("corpo", "")
+
+            if not assunto:
+                raise ValueError("Informe o assunto do e-mail.")
+
+            enviar_email_documento(
+                nota,
+                destinatarios=destinatarios,
+                assunto=assunto,
+                corpo=corpo,
+            )
+        except ValueError as exc:
+            flash(str(exc), "danger")
+            return redirect(url_for("visualizar_nota", nota_id=nota.id))
+        except (OSError, smtplib.SMTPException) as exc:
+            app.logger.exception(
+                "Falha ao enviar documento %s por e-mail: %s",
+                nota.numero_formatado,
+                exc,
+            )
+            flash("Não foi possível enviar o documento por e-mail agora.", "danger")
+            return redirect(url_for("visualizar_nota", nota_id=nota.id))
+
+        flash(
+            f"{nota.numero_formatado} enviado por e-mail para {', '.join(destinatarios)}.",
+            "success",
+        )
+        return redirect(url_for("visualizar_nota", nota_id=nota.id))
+
 
 def aplicar_migracoes_simples():
     migracoes = {
@@ -646,8 +955,6 @@ def aplicar_migracoes_simples():
             "uf": "VARCHAR(2)",
             "cep": "VARCHAR(12)",
             "logo_arquivo": "VARCHAR(255)",
-            "documento_nome": "VARCHAR(120)",
-            "documento_prefixo": "VARCHAR(20)",
         },
         "tomadores": {
             "logradouro": "VARCHAR(150)",
@@ -666,6 +973,7 @@ def aplicar_migracoes_simples():
             "reset_token_expira_em": "DATETIME",
         },
         "notas_debito": {
+            "tipo_documento_id": "INTEGER",
             "tomador_nome": "VARCHAR(180)",
             "tomador_documento": "VARCHAR(30)",
             "tomador_endereco": "VARCHAR(350)",
@@ -712,28 +1020,26 @@ def aplicar_migracoes_simples():
 
 
 def garantir_empresa_padrao():
-    empresa = Empresa.query.first()
-    if empresa is None:
-        db.session.add(
-            Empresa(
-                razao_social="Fluxar Emissões",
-                documento_nome="NOTA DE DÉBITO",
-                documento_prefixo="ND",
-            )
-        )
-        db.session.commit()
+    if Empresa.query.first() is not None:
         return
 
-    alterado = False
-    if not empresa.documento_nome:
-        empresa.documento_nome = "NOTA DE DÉBITO"
-        alterado = True
-    if empresa.documento_prefixo is None:
-        empresa.documento_prefixo = "ND"
-        alterado = True
+    db.session.add(Empresa(razao_social="Fluxar Emissões"))
+    db.session.commit()
 
-    if alterado:
-        db.session.commit()
+
+def garantir_tipo_documento_padrao():
+    if TipoDocumento.query.first() is not None:
+        return
+
+    tipo = TipoDocumento(
+        nome="NOTA DE DÉBITO",
+        prefixo="ND",
+        proximo_numero=1,
+        observacao_padrao=None,
+        ativo=True,
+    )
+    db.session.add(tipo)
+    db.session.commit()
 
 
 def garantir_usuario_padrao():
@@ -876,21 +1182,13 @@ def servico_email_configurado():
     return bool(config["host"] and config["remetente"])
 
 
-def enviar_email_recuperacao(usuario, link):
+def enviar_mensagem_email(mensagem):
     config = obter_configuracao_smtp()
     if not config["host"] or not config["remetente"]:
         raise OSError("Configuração SMTP ausente.")
 
-    mensagem = EmailMessage()
-    mensagem["Subject"] = "Redefinição de senha - Fluxar Emissões"
-    mensagem["From"] = f'{config["remetente_nome"]} <{config["remetente"]}>'
-    mensagem["To"] = usuario.email_recuperacao
-    mensagem.set_content(
-        "Recebemos uma solicitação para redefinir a senha do Fluxar Emissões.\n\n"
-        f"Acesse o link abaixo para definir uma nova senha:\n{link}\n\n"
-        "Este link é válido por 30 minutos e poderá ser utilizado apenas uma vez.\n\n"
-        "Se você não solicitou a alteração, ignore esta mensagem."
-    )
+    if "From" not in mensagem:
+        mensagem["From"] = f'{config["remetente_nome"]} <{config["remetente"]}>'
 
     contexto_ssl = ssl.create_default_context()
     if config["usar_ssl"]:
@@ -915,42 +1213,88 @@ def enviar_email_recuperacao(usuario, link):
         servidor.send_message(mensagem)
 
 
-def preencher_snapshots_legados():
-    empresa = Empresa.query.first()
-    logo_bytes, logo_mimetype = obter_logo_atual(empresa)
-    alterado = False
+def enviar_email_recuperacao(usuario, link):
+    mensagem = EmailMessage()
+    mensagem["Subject"] = "Redefinição de senha - Fluxar Emissões"
+    mensagem["To"] = usuario.email_recuperacao
+    mensagem.set_content(
+        "Recebemos uma solicitação para redefinir a senha do Fluxar Emissões.\n\n"
+        f"Acesse o link abaixo para definir uma nova senha:\n{link}\n\n"
+        "Este link é válido por 30 minutos e poderá ser utilizado apenas uma vez.\n\n"
+        "Se você não solicitou a alteração, ignore esta mensagem."
+    )
+    enviar_mensagem_email(mensagem)
 
-    for nota in NotaDebito.query.all():
-        if nota.documento_nome is None:
-            nota.documento_nome = empresa.documento_nome_exibicao if empresa else "NOTA DE DÉBITO"
-            alterado = True
-        if nota.documento_prefixo is None:
-            nota.documento_prefixo = empresa.documento_prefixo_exibicao if empresa else "ND"
-            alterado = True
 
-        if nota.tomador_nome is None and nota.tomador:
-            nota.tomador_nome = nota.tomador.nome
-            nota.tomador_documento = nota.tomador.documento
-            nota.tomador_endereco = nota.tomador.endereco_formatado or None
-            alterado = True
+def nome_exibicao_empresa(empresa):
+    if empresa is None:
+        return "Fluxar Emissões"
+    return (empresa.nome_fantasia or empresa.razao_social or "Fluxar Emissões").strip()
 
-        if nota.emitente_razao_social is None and empresa:
-            nota.emitente_razao_social = empresa.razao_social
-            nota.emitente_nome_fantasia = empresa.nome_fantasia
-            nota.emitente_cnpj = empresa.cnpj
-            nota.emitente_endereco = empresa.endereco_formatado or None
-            nota.emitente_telefone = empresa.telefone
-            nota.emitente_email = empresa.email
-            nota.emitente_logo = logo_bytes
-            nota.emitente_logo_mimetype = logo_mimetype
-            alterado = True
 
-        if not nota.pdf_token:
-            nota.pdf_token = gerar_token_pdf()
-            alterado = True
+def montar_assunto_email_documento(nota, empresa):
+    return (
+        f"{nome_exibicao_empresa(empresa)} - "
+        f"{nota.documento_nome_exibicao} {nota.numero_formatado}"
+    )
 
-    if alterado:
-        db.session.commit()
+
+def montar_corpo_email_documento(nota, empresa):
+    nome_empresa = nome_exibicao_empresa(empresa)
+    vencimento = nota.vencimento.strftime("%d/%m/%Y") if nota.vencimento else ""
+
+    return (
+        f"Prezado {nota.tomador_nome_exibicao},\n\n"
+        f"Segue em anexo o documento {nota.numero_formatado}.\n\n"
+        f"Documento: {nota.documento_nome_exibicao}\n"
+        f"Número: {nota.numero_formatado}\n"
+        f"Emissão: {nota.emissao.strftime('%d/%m/%Y')}\n"
+        f"Vencimento: {vencimento}\n"
+        f"Valor: {formatar_brl(nota.valor_pagar)}\n\n"
+        "Atenciosamente,\n"
+        f"{nome_empresa}"
+    )
+
+
+def separar_destinatarios_email(valor):
+    partes = str(valor or "").replace(";", ",").split(",")
+    destinatarios = []
+    vistos = set()
+
+    for parte in partes:
+        email = parte.strip()
+        if not email:
+            continue
+
+        if not re.fullmatch(r"[^@\s,]+@[^@\s,]+\.[^@\s,]+", email):
+            raise ValueError(f"E-mail inválido: {email}")
+
+        chave = email.lower()
+        if chave not in vistos:
+            vistos.add(chave)
+            destinatarios.append(email)
+
+    if not destinatarios:
+        raise ValueError("Informe pelo menos um e-mail destinatário.")
+
+    return destinatarios
+
+
+def enviar_email_documento(nota, destinatarios, assunto, corpo):
+    mensagem = EmailMessage()
+    mensagem["Subject"] = assunto
+    mensagem["To"] = ", ".join(destinatarios)
+    mensagem.set_content(corpo)
+
+    caminho_pdf = obter_ou_gerar_pdf_servidor(nota)
+    mensagem.add_attachment(
+        caminho_pdf.read_bytes(),
+        maintype="application",
+        subtype="pdf",
+        filename=f"{sanitizar_nome_arquivo(nota.numero_formatado)}.pdf",
+    )
+
+    enviar_mensagem_email(mensagem)
 
 
 def preencher_tomador(tomador, form):
@@ -984,16 +1328,108 @@ def validar_documento_tomador_unico(tomador):
         raise ValueError("Já existe um tomador cadastrado com este CPF/CNPJ.")
 
 
+def preencher_tipo_documento(tipo, form):
+    tipo.nome = validar_nome_documento(form.get("nome"))
+    tipo.prefixo = validar_prefixo_documento(form.get("prefixo")).upper()
+
+    proximo_numero = str(form.get("proximo_numero", "")).strip()
+    if not proximo_numero.isdigit() or int(proximo_numero) <= 0:
+        raise ValueError("Informe um próximo número maior que zero.")
+
+    tipo.proximo_numero = int(proximo_numero)
+    tipo.observacao_padrao = form.get("observacao_padrao", "").strip() or None
+    tipo.ativo = form.get("ativo") == "1"
+
+
+def validar_tipo_documento_unico(tipo):
+    with db.session.no_autoflush:
+        nome_existente = TipoDocumento.query.filter(
+            func.lower(TipoDocumento.nome) == tipo.nome.lower()
+        )
+        prefixo_existente = TipoDocumento.query.filter(
+            func.lower(TipoDocumento.prefixo) == tipo.prefixo.lower()
+        )
+
+        if tipo.id:
+            nome_existente = nome_existente.filter(TipoDocumento.id != tipo.id)
+            prefixo_existente = prefixo_existente.filter(TipoDocumento.id != tipo.id)
+
+        if nome_existente.first():
+            raise ValueError("Já existe um tipo de documento com este nome.")
+
+        if prefixo_existente.first():
+            mensagem = "Já existe um tipo de documento com este prefixo."
+            if not tipo.prefixo:
+                mensagem = "Já existe um tipo de documento sem prefixo."
+            raise ValueError(mensagem)
+
+
+def validar_proximo_numero_tipo(tipo):
+    maior_numero = db.session.query(func.max(NotaDebito.numero_sequencial)).filter(
+        NotaDebito.tipo_documento_id == tipo.id
+    ).scalar()
+
+    if maior_numero is not None and tipo.proximo_numero <= int(maior_numero):
+        raise ValueError(
+            f"O próximo número deve ser maior que {formatar_numero_documento(maior_numero, tipo.prefixo)}."
+        )
+
+
+def reservar_proximo_numero(tipo_documento_id):
+    novo_proximo = db.session.execute(
+        update(TipoDocumento)
+        .where(
+            TipoDocumento.id == tipo_documento_id,
+            TipoDocumento.ativo.is_(True),
+        )
+        .values(
+            proximo_numero=TipoDocumento.proximo_numero + 1,
+            atualizado_em=datetime.utcnow(),
+        )
+        .returning(TipoDocumento.proximo_numero)
+    ).scalar_one_or_none()
+
+    if novo_proximo is None:
+        raise ValueError("O tipo de documento selecionado não está disponível para emissão.")
+
+    return int(novo_proximo) - 1
+
+
+def montar_tipo_documento_json(tipo):
+    if tipo is None:
+        return None
+
+    return {
+        "id": tipo.id,
+        "nome": tipo.nome,
+        "prefixo": tipo.prefixo_exibicao,
+        "proximo_numero": tipo.proximo_numero,
+        "numero_formatado": tipo.proximo_numero_formatado,
+        "observacao_padrao": tipo.observacao_padrao or "",
+    }
+
+
 def salvar_nota(form):
+    tipo_id = str(form.get("tipo_documento_id", "")).strip()
+    if not tipo_id.isdigit():
+        raise ValueError("Selecione o tipo de documento.")
+
+    tipo = db.session.get(TipoDocumento, int(tipo_id))
+    if tipo is None or not tipo.ativo:
+        raise ValueError("O tipo de documento selecionado não está disponível para emissão.")
+
+    numero_sequencial = reservar_proximo_numero(tipo.id)
     nota = NotaDebito(
-        numero_sequencial=obter_proximo_numero(),
+        tipo_documento_id=tipo.id,
+        numero_sequencial=numero_sequencial,
+        documento_nome=tipo.nome,
+        documento_prefixo=tipo.prefixo_exibicao,
         pdf_token=gerar_token_pdf(),
     )
     preencher_nota_com_formulario(
         nota,
         form,
         atualizar_emitente=True,
-        atualizar_documento=True,
     )
     db.session.add(nota)
     db.session.flush()
@@ -1007,7 +1443,6 @@ def atualizar_nota(nota, form):
         nota,
         form,
         atualizar_emitente=False,
-        atualizar_documento=True,
     )
     if not nota.pdf_token:
         nota.pdf_token = gerar_token_pdf()
@@ -1021,7 +1456,6 @@ def preencher_nota_com_formulario(
     nota,
     form,
     atualizar_emitente=False,
-    atualizar_documento=False,
 ):
     tomador_id = form.get("tomador_id", "").strip()
     if not tomador_id.isdigit():
@@ -1032,7 +1466,7 @@ def preencher_nota_com_formulario(
         raise ValueError("O tomador selecionado não foi encontrado.")
 
     emissao = converter_data(form.get("emissao"), "emissão")
-    vencimento = converter_data(form.get("vencimento"), "vencimento")
+    vencimento = converter_data_opcional(form.get("vencimento"), "vencimento")
 
     descricoes = form.getlist("item_descricao[]")
     quantidades = form.getlist("item_quantidade[]")
@@ -1103,10 +1537,6 @@ def preencher_nota_com_formulario(
         garantir_empresa_padrao()
         empresa = Empresa.query.first()
 
-    if atualizar_documento or nota.documento_nome is None:
-        nota.documento_nome = empresa.documento_nome_exibicao
-        nota.documento_prefixo = empresa.documento_prefixo_exibicao
-
     if atualizar_emitente or nota.emitente_razao_social is None:
         logo_bytes, logo_mimetype = obter_logo_atual(empresa)
         nota.emitente_razao_social = empresa.razao_social
@@ -1135,19 +1565,35 @@ def preencher_nota_com_formulario(
 def montar_contexto_form_nota(nota=None):
     hoje = date.today()
     modo_edicao = nota is not None
-    empresa = Empresa.query.first()
-    if empresa is None:
-        garantir_empresa_padrao()
-        empresa = Empresa.query.first()
+    tipos_ativos = TipoDocumento.query.filter_by(ativo=True).order_by(
+        TipoDocumento.nome.asc()
+    ).all()
+    tipo_padrao = TipoDocumento.query.filter_by(ativo=True).order_by(
+        TipoDocumento.id.asc()
+    ).first()
 
-    documento_nome_atual = empresa.documento_nome_exibicao
-    documento_prefixo_atual = empresa.documento_prefixo_exibicao
+    if request.method == "POST":
+        tipo_documento_id = request.form.get("tipo_documento_id", "")
+    elif modo_edicao:
+        tipo_documento_id = str(nota.tipo_documento_id)
+    else:
+        tipo_documento_id = request.args.get("tipo_documento_id", "")
+        if not str(tipo_documento_id).isdigit() and tipo_padrao:
+            tipo_documento_id = str(tipo_padrao.id)
+
+    tipo_selecionado = None
+    if str(tipo_documento_id).isdigit():
+        tipo_selecionado = db.session.get(TipoDocumento, int(tipo_documento_id))
+
+    if not modo_edicao and tipo_selecionado and not tipo_selecionado.ativo:
+        tipo_selecionado = None
+        tipo_documento_id = ""
 
     if request.method == "POST":
         form_data = {
             "emissao": request.form.get("emissao", hoje.isoformat()),
             "referencia": request.form.get("referencia", hoje.strftime("%m/%Y")),
-            "vencimento": request.form.get("vencimento", hoje.isoformat()),
+            "vencimento": request.form.get("vencimento", ""),
             "parcelas": request.form.get("parcelas", "1"),
             "forma_pagamento": request.form.get("forma_pagamento", "DINHEIRO"),
             "observacoes": request.form.get("observacoes", ""),
@@ -1160,7 +1606,7 @@ def montar_contexto_form_nota(nota=None):
         form_data = {
             "emissao": nota.emissao.isoformat(),
             "referencia": nota.referencia or nota.emissao.strftime("%m/%Y"),
-            "vencimento": nota.vencimento.isoformat(),
+            "vencimento": nota.vencimento.isoformat() if nota.vencimento else "",
             "parcelas": str(parcelas),
             "forma_pagamento": forma_pagamento,
             "observacoes": nota.observacoes or "",
@@ -1179,10 +1625,10 @@ def montar_contexto_form_nota(nota=None):
         form_data = {
             "emissao": hoje.isoformat(),
             "referencia": hoje.strftime("%m/%Y"),
-            "vencimento": hoje.isoformat(),
+            "vencimento": "",
             "parcelas": "1",
             "forma_pagamento": "DINHEIRO",
-            "observacoes": "",
+            "observacoes": tipo_selecionado.observacao_padrao if tipo_selecionado else "",
             "outras_retencoes": "0,00",
         }
         itens_form = obter_itens_formulario(request.form)
@@ -1204,19 +1650,14 @@ def montar_contexto_form_nota(nota=None):
         texto_submit = "Salvar alterações"
     else:
         titulo_pagina = "Novo documento"
-        numero_exibicao = formatar_numero_documento(
-            obter_proximo_numero(),
-            documento_prefixo_atual,
+        numero_exibicao = (
+            tipo_selecionado.proximo_numero_formatado
+            if tipo_selecionado
+            else "—"
         )
         form_action = url_for("nova_nota")
         url_cadastrar_tomador = url_for("novo_tomador", next="nova_nota")
         texto_submit = "Gerar documento"
-
-    numero_apos_salvar = (
-        formatar_numero_documento(nota.numero_sequencial, documento_prefixo_atual)
-        if modo_edicao
-        else numero_exibicao
-    )
 
     return {
         "nota": nota,
@@ -1227,18 +1668,17 @@ def montar_contexto_form_nota(nota=None):
         "form_data": form_data,
         "itens_form": itens_form,
         "tem_tomadores": Tomador.query.count() > 0,
+        "tem_tipos_documento": bool(tipos_ativos),
         "tomador_selecionado_json": montar_tomador_json(tomador_selecionado),
         "url_cadastrar_tomador": url_cadastrar_tomador,
         "texto_submit": texto_submit,
-        "documento_nome_atual": documento_nome_atual,
-        "documento_prefixo_atual": documento_prefixo_atual,
-        "numero_apos_salvar": numero_apos_salvar,
+        "tipos_documento": tipos_ativos,
+        "tipos_documento_json": [
+            montar_tipo_documento_json(tipo) for tipo in tipos_ativos
+        ],
+        "tipo_documento_selecionado": tipo_selecionado,
+        "tipo_documento_id": str(tipo_documento_id or ""),
     }
-
-
-def obter_proximo_numero():
-    ultimo = db.session.query(func.max(NotaDebito.numero_sequencial)).scalar()
-    return (ultimo or 0) + 1
 
 
 def obter_itens_formulario(form):
@@ -1426,6 +1866,13 @@ def preparar_telefone_whatsapp(valor):
     return digitos
 
 
+def converter_data_opcional(valor, campo):
+    texto = str(valor or "").strip()
+    if not texto:
+        return None
+    return converter_data(texto, campo)
+
+
 def converter_data(valor, campo):
     try:
         return datetime.strptime(valor or "", "%Y-%m-%d").date()
@@ -1454,6 +1901,31 @@ def converter_quantidade(valor):
         raise ValueError("A quantidade dos itens deve ser maior que zero.")
 
     return quantidade_inteira
+
+
+def converter_data_filtro(valor):
+    texto = str(valor or "").strip()
+    if not texto:
+        return None
+
+    try:
+        return date.fromisoformat(texto)
+    except ValueError:
+        return None
+
+
+def converter_decimal_filtro(valor):
+    texto = str(valor or "").strip().replace("R$", "").replace(" ", "")
+    if not texto:
+        return None
+
+    if "," in texto:
+        texto = texto.replace(".", "").replace(",", ".")
+
+    try:
+        return arredondar_moeda(Decimal(texto))
+    except (InvalidOperation, ValueError):
+        return None
 
 
 def converter_decimal(valor, campo):

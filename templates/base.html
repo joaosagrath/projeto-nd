@@ -1,89 +1,97 @@
 <!doctype html>
 <html lang="pt-BR">
-
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-
   <title>{% block title %}Fluxar Emissões{% endblock %}</title>
 
-  <!-- PWA -->
+  <!-- Manifesto e ícones para PWA -->
   <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
-
-  <!-- Ícones -->
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='icon-192x192.png') }}">
   <link rel="icon" type="image/png" sizes="512x512" href="{{ url_for('static', filename='icon-512x512.png') }}">
-
-  <!-- Aparência -->
-  <meta name="theme-color" content="#5b21b6">
+  <meta name="theme-color" content="#5408c3">
   <meta name="application-name" content="Fluxar Emissões">
-
-  <!-- Android / navegadores Chromium -->
   <meta name="mobile-web-app-capable" content="yes">
-
-  <!-- iOS / iPadOS -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Fluxar Emissões">
 
-  <!-- Bootstrap local -->
   <link rel="stylesheet" href="{{ url_for('static', filename='bootstrap/css/bootstrap.min.css') }}">
-
-  <!-- CSS da aplicação -->
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
-
 <body class="bg-body-tertiary">
-  {% if session.get('usuario_id') %}
-  <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
-    <div class="container">
-      <img src="static/icon-96x96.png" alt="Logotipo da empresa" style="height: 48px;">
-      <a class="navbar-brand fw-semibold" href="{{ url_for('index') }}">Fluxar Emissões</a>
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarPrincipal"
-        aria-controls="navbarPrincipal" aria-expanded="false" aria-label="Abrir menu">
-        <span class="navbar-toggler-icon"></span>
-      </button>
-      <div class="collapse navbar-collapse" id="navbarPrincipal">
-        <div class="navbar-nav ms-auto align-items-lg-center">
-          <a class="nav-link" href="{{ url_for('index') }}">Documentos</a>
-          <a class="nav-link" href="{{ url_for('nova_nota') }}">Novo documento</a>
-          <a class="nav-link" href="{{ url_for('listar_tomadores') }}">Tomadores</a>
-          <a class="nav-link" href="{{ url_for('configuracoes') }}">Configurações</a>
-          <span class="navbar-text small ms-lg-3 me-lg-2">{{ session.get('usuario_login') }}</span>
-          <a class="nav-link" href="{{ url_for('logout') }}">Sair</a>
-          {% if config.get('MODO_EXECUTAVEL') %}
-          <form method="post" action="{{ url_for('encerrar_aplicacao') }}" class="ms-lg-2">
-            <button type="submit" class="btn btn-sm btn-outline-light">Encerrar aplicativo</button>
-          </form>
-          {% endif %}
+  {% if session.get('usuario_id') or config.get('MODO_EXECUTAVEL') %}
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
+      <div class="container">
+        <a class="navbar-brand fw-semibold" href="{{ url_for('index') }}">Fluxar Emissões</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarPrincipal" aria-controls="navbarPrincipal" aria-expanded="false" aria-label="Abrir menu">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarPrincipal">
+          <div class="navbar-nav ms-auto align-items-lg-center">
+            <a class="nav-link" href="{{ url_for('index') }}">Documentos</a>
+            <a class="nav-link" href="{{ url_for('listar_tomadores') }}">Tomadores</a>
+            <a class="nav-link" href="{{ url_for('configuracoes') }}">Configurações</a>
+
+            {% if config.get('MODO_EXECUTAVEL') %}
+              <form method="post" action="{{ url_for('encerrar_aplicacao') }}" class="ms-lg-2">
+                <button type="submit" class="btn btn-sm btn-outline-light">Encerrar aplicativo</button>
+              </form>
+            {% else %}
+              <div class="dropdown ms-lg-3">
+                <button
+                  class="btn btn-link nav-link dropdown-toggle d-flex align-items-center gap-2 border-0 text-decoration-none"
+                  type="button"
+                  data-bs-toggle="dropdown"
+                  aria-expanded="false"
+                >
+                  <img
+                    src="{{ url_for('static', filename='user.png') }}"
+                    alt="Usuário"
+                    width="28"
+                    height="28"
+                  >
+                  <span>{{ session.get('usuario_login') }}</span>
+                </button>
+
+                <ul class="dropdown-menu dropdown-menu-end">
+                  <li>
+                    <a class="dropdown-item" href="{{ url_for('configuracoes') }}#acesso-sistema">Alterar senha</a>
+                  </li>
+                  <li><hr class="dropdown-divider"></li>
+                  <li>
+                    <a class="dropdown-item" href="{{ url_for('logout') }}">Sair</a>
+                  </li>
+                </ul>
+              </div>
+            {% endif %}
+          </div>
         </div>
       </div>
-    </div>
-  </nav>
+    </nav>
   {% endif %}
 
   <main class="container py-4">
     {% with mensagens = get_flashed_messages(with_categories=true) %}
-    {% if mensagens %}
-    {% for categoria, mensagem in mensagens %}
-    <div class="alert alert-{{ categoria }} alert-dismissible fade show" role="alert">
-      {{ mensagem }}
-      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
-    </div>
-    {% endfor %}
-    {% endif %}
+      {% if mensagens %}
+        {% for categoria, mensagem in mensagens %}
+          <div class="alert alert-{{ categoria }} alert-dismissible fade show" role="alert">
+            {{ mensagem }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fechar"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
     {% endwith %}
 
     {% block content %}{% endblock %}
   </main>
 
   <script src="{{ url_for('static', filename='bootstrap/js/bootstrap.bundle.min.js') }}"></script>
-  {% if session.get('usuario_id') %}
-  <script src="{{ url_for('static', filename='js/masks.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/viacep.js') }}"></script>
+  {% if session.get('usuario_id') or config.get('MODO_EXECUTAVEL') %}
+    <script src="{{ url_for('static', filename='js/masks.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/viacep.js') }}"></script>
   {% endif %}
-  {% block scripts %}{% endblock %}
 
   <script>
     async function registrarServiceWorker() {
@@ -103,6 +111,6 @@
     window.addEventListener("load", registrarServiceWorker);
   </script>
 
+  {% block scripts %}{% endblock %}
 </body>
-
 </html>

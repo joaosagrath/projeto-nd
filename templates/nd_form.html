@@ -8,18 +8,20 @@
     <h1 class="h3 mb-1">{{ titulo_pagina }}</h1>
     <p class="text-body-secondary mb-0">
       {% if modo_edicao %}
-        {{ nota.documento_nome_exibicao }} · Número atual: <strong>{{ numero_exibicao }}</strong>
+        {{ nota.documento_nome_exibicao }} · Número: <strong>{{ numero_exibicao }}</strong>
       {% else %}
-        {{ documento_nome_atual }} · Número reservado: <strong>{{ numero_exibicao }}</strong>
+        Selecione o tipo de documento, preencha os dados e gere a emissão.
       {% endif %}
     </p>
   </div>
   <a class="btn btn-outline-secondary" href="{{ url_for('visualizar_nota', nota_id=nota.id) if modo_edicao else url_for('index') }}">Voltar</a>
 </div>
 
-{% if modo_edicao and (nota.documento_nome_exibicao != documento_nome_atual or nota.documento_prefixo_exibicao != documento_prefixo_atual) %}
-  <div class="alert alert-info">
-    Ao salvar, este documento passará a usar o tipo atual <strong>{{ documento_nome_atual }}</strong> e a numeração <strong>{{ numero_apos_salvar }}</strong>.
+
+{% if not modo_edicao and not tem_tipos_documento %}
+  <div class="alert alert-warning d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+    <div>Cadastre pelo menos um tipo de documento ativo antes de gerar uma emissão.</div>
+    <a class="btn btn-sm btn-warning" href="{{ url_for('novo_tipo_documento') }}">Cadastrar tipo</a>
   </div>
 {% endif %}
 
@@ -31,6 +33,41 @@
 {% endif %}
 
 <form method="post" id="formNotaDebito" action="{{ form_action }}">
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-header fw-semibold">Tipo de documento</div>
+    <div class="card-body">
+      {% if modo_edicao %}
+        <div class="documento-tipo-indicador">
+          <div class="small text-body-secondary text-uppercase">Tipo utilizado</div>
+          <div class="fs-5 fw-semibold">{{ nota.documento_nome_exibicao }}</div>
+          <div class="mt-1">Número: <strong>{{ nota.numero_formatado }}</strong></div>
+        </div>
+      {% else %}
+        <div class="row g-3 align-items-stretch">
+          <div class="col-lg-6">
+            <label class="form-label" for="tipo_documento_id">Modelo</label>
+            <select class="form-select" id="tipo_documento_id" name="tipo_documento_id" required {% if not tem_tipos_documento %}disabled{% endif %}>
+              {% if not tipos_documento %}
+                <option value="">Nenhum tipo ativo cadastrado</option>
+              {% endif %}
+              {% for tipo in tipos_documento %}
+                <option value="{{ tipo.id }}" {% if tipo_documento_id|int == tipo.id %}selected{% endif %}>{{ tipo.nome }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Cada tipo possui sua própria sequência numérica e observação padrão.</div>
+          </div>
+          <div class="col-lg-6">
+            <div class="documento-tipo-indicador h-100" id="tipoDocumentoIndicador">
+              <div class="small text-body-secondary text-uppercase">Documento selecionado</div>
+              <div class="fs-5 fw-semibold" id="tipoDocumentoNome">{{ tipo_documento_selecionado.nome if tipo_documento_selecionado else 'Nenhum tipo selecionado' }}</div>
+              <div class="mt-1">Próximo número: <strong id="tipoDocumentoNumero">{{ numero_exibicao }}</strong></div>
+            </div>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
   <div class="card shadow-sm border-0 mb-4">
     <div class="card-header fw-semibold">Dados do documento</div>
     <div class="card-body">
@@ -45,7 +82,7 @@
         </div>
         <div class="col-md-3">
           <label class="form-label" for="vencimento">Vencimento</label>
-          <input class="form-control" type="date" id="vencimento" name="vencimento" value="{{ form_data.vencimento }}" required>
+          <input class="form-control" type="date" id="vencimento" name="vencimento" value="{{ form_data.vencimento }}">
         </div>
         <div class="col-md-1">
           <label class="form-label" for="parcelas">Parcelas</label>
@@ -93,7 +130,18 @@
         >
           Buscar tomador
         </button>
+        <a
+          class="btn btn-outline-secondary {% if not tomador_selecionado_json %}disabled{% endif %}"
+          id="btnEditarTomadorSelecionado"
+          href="{{ url_for('editar_tomador', tomador_id=tomador_selecionado_json.id) if tomador_selecionado_json else '#' }}"
+          target="_blank"
+          rel="noopener"
+          {% if not tomador_selecionado_json %}aria-disabled="true" tabindex="-1"{% endif %}
+        >
+          Editar tomador
+        </a>
       </div>
+      <div class="form-text">A edição abre em outra aba para preservar os dados já preenchidos neste documento.</div>
 
       <div class="tomador-resumo mt-3 {% if not tomador_selecionado_json %}d-none{% endif %}" id="tomadorResumo">
         <div class="row g-3 small">
@@ -192,7 +240,7 @@
 
   <div class="d-flex justify-content-end gap-2">
     <a class="btn btn-outline-secondary" href="{{ url_for('visualizar_nota', nota_id=nota.id) if modo_edicao else url_for('index') }}">Cancelar</a>
-    <button class="btn btn-primary" type="submit" {% if not tem_tomadores %}disabled{% endif %}>{{ texto_submit }}</button>
+    <button class="btn btn-primary" type="submit" {% if not tem_tomadores or (not modo_edicao and not tem_tipos_documento) %}disabled{% endif %}>{{ texto_submit }}</button>
   </div>
 </form>
 
@@ -237,7 +285,12 @@
 </div>
 
 <script type="application/json" id="tomadorSelecionadoData">{{ tomador_selecionado_json|tojson }}</script>
-<script type="application/json" id="configNotaData">{{ {'url_busca_tomadores': url_for('api_buscar_tomadores')}|tojson }}</script>
+<script type="application/json" id="tiposDocumentoData">{{ tipos_documento_json|tojson }}</script>
+<script type="application/json" id="configNotaData">{{ {
+  'url_busca_tomadores': url_for('api_buscar_tomadores'),
+  'url_tomador_detalhe_base': url_for('api_obter_tomador', tomador_id=0),
+  'url_editar_tomador_base': url_for('editar_tomador', tomador_id=0)
+}|tojson }}</script>
 {% endblock %}
 
 {% block scripts %}
